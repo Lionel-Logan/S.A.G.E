@@ -1,11 +1,11 @@
 {
-    "name": "frontend",
-    "short_name": "frontend",
+    "name": "Situational Awareness and Guidance Engine",
+    "short_name": "S.A.G.E",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "An app that seamlessly integrates and connect S.A.G.E to the internet.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
