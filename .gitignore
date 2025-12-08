@@ -1,0 +1,87 @@
+
+# -----------------------------
+# Global Python ignores
+# -----------------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+env/
+venv/
+ENV/
+*.sqlite3
+
+# -----------------------------
+# Flutter / Dart ignores
+# -----------------------------
+build/
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+.flutter-plugins
+.flutter-plugins-dependencies
+Generated.xcconfig
+flutter_export_environment.sh
+
+# iOS
+ios/Pods/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Runner/GeneratedPluginRegistrant.*
+
+# Android
+android/.gradle/
+android/.idea/
+android/local.properties
+android/key.properties
+android/app/debug/
+android/app/profile/
+android/app/release/
+
+# -----------------------------
+# VS Code
+# -----------------------------
+.vscode/
+history/
+
+# -----------------------------
+# ML Services
+# -----------------------------
+ml_services/**/data/
+ml_services/**/training/checkpoints/
+ml_services/**/models/*.onnx
+ml_services/**/models/*.pt
+ml_services/**/models/*.pth
+ml_services/**/models/*.pkl
+
+# Ignore large media files
+*.zip
+*.tar
+*.tar.gz
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# -----------------------------
+# Environment variables & secrets
+# -----------------------------
+.env
+.env.*
+*.key
+*.pem
+
+# -----------------------------
+# Docker
+# -----------------------------
+*.log
+docker-compose.override.yml
+
+# -----------------------------
+# OS Files
+# -----------------------------
+Thumbs.db
+.DS_Store
