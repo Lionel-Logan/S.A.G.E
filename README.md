@@ -66,7 +66,7 @@ The system offloads heavy AI workloads to a **mobile app + hosted backend**, kee
 
 ## 👥 Team Responsibilities
 
-### 🟦 **You — Mobile App Developer**
+### 🟦 **Navneet — Mobile App Developer**
 - Flutter UI/UX  
 - Camera streaming & communication with Pi  
 - STT/TTS integration  
@@ -96,28 +96,6 @@ The system offloads heavy AI workloads to a **mobile app + hosted backend**, kee
 
 ---
 
-## 📁 Repository Structure
-
-```
-SAGE/
-│
-├── docs/
-│
-├── mobile_app/
-│
-├── app_backend/
-│
-├── ml_services/
-│   ├── face_recognition_service/
-│   └── object_detection_service/
-│
-├── pi_firmware/
-│
-└── devops/
-```
-
----
-
 ## 🧰 Tech Stack
 
 ### **Frontend & Device Layer**
@@ -141,38 +119,6 @@ SAGE/
 
 ---
 
-## 🧪 Local Development
-
-### ▶ Run Flutter App
-```
-cd mobile_app
-flutter pub get
-flutter run
-```
-
-### ▶ Run Backend API
-```
-cd app_backend
-pip install -r requirements.txt
-uvicorn src.main:app --reload --port 8000
-```
-
-### ▶ Run ML Services
-```
-cd ml_services/face_recognition_service
-uvicorn src.main:app --reload --port 8100
-
-cd ml_services/object_detection_service
-uvicorn src.main:app --reload --port 8200
-```
-
-### ▶ (Optional) Start all services together
-```
-docker-compose -f docker-compose.dev.yml up --build
-```
-
----
-
 ## 🧿 Core Features (Software-first)
 
 - Object Detection  
@@ -190,11 +136,3 @@ docker-compose -f docker-compose.dev.yml up --build
 - AR via reflective HUD  
 
 ---
-
-## 📜 License
-Add your license here.
-
----
-
-## ❤️ Acknowledgements
-Thanks to the S.A.G.E development team for building an accessible AI-powered wearable.
