@@ -5,12 +5,14 @@ class AppSidebar extends StatelessWidget {
   final bool isOpen;
   final VoidCallback onClose;
   final Function(String) onNavigate;
+  final String currentRoute;
 
   const AppSidebar({
     super.key,
     required this.isOpen,
     required this.onClose,
     required this.onNavigate,
+    this.currentRoute = 'home',
   });
 
   @override
@@ -65,15 +67,21 @@ class AppSidebar extends StatelessWidget {
                       _NavItem(
                         icon: Icons.home_rounded,
                         label: 'Home',
-                        isActive: true,
-                        onTap: () => onNavigate('home'),
+                        isActive: currentRoute == 'home',
+                        onTap: () {
+                          print('Home tapped'); // Debug
+                          onNavigate('home');
+                        },
                       ),
                       const SizedBox(height: 8),
                       _NavItem(
                         icon: Icons.settings_rounded,
                         label: 'Settings',
-                        isActive: false,
-                        onTap: () => onNavigate('settings'),
+                        isActive: currentRoute == 'settings',
+                        onTap: () {
+                          print('Settings tapped'); // Debug
+                          onNavigate('settings');
+                        },
                       ),
                     ],
                   ),
@@ -81,7 +89,10 @@ class AppSidebar extends StatelessWidget {
                 
                 // Account Section
                 _AccountButton(
-                  onTap: () => onNavigate('account'),
+                  onTap: () {
+                    print('Account tapped'); // Debug
+                    onNavigate('account');
+                  },
                 ),
               ],
             ),
