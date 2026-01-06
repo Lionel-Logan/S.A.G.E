@@ -4,6 +4,7 @@ import '../theme/app-theme.dart';
 import '../widgets/sidebar.dart';
 import '../widgets/glass-status-card.dart';
 import '../widgets/quick-access-card.dart';
+import '../services/api_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   final Function(String) onNavigate;
@@ -38,7 +39,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   void initState() {
     super.initState();
     _glassStatus = GlassStatus(
-      status: ConnectionStatus.connected,
+      status: ConnectionStatus.searching,
       batteryLevel: 85,
     );
     
@@ -87,6 +88,64 @@ class _DashboardScreenState extends State<DashboardScreen>
         _quickAccessAnimController.forward();
       }
     });
+    
+    // Check Pi server connection and pairing status
+    _checkPiConnection();
+  }
+  
+  Future<void> _checkPiConnection() async {
+    try {
+      final identity = await ApiService.getIdentity();
+      setState(() {
+        _glassStatus = GlassStatus(
+          status: identity['paired'] == true 
+              ? ConnectionStatus.connected 
+              : ConnectionStatus.disconnected,
+          batteryLevel: 85,
+        );
+      });
+      
+      // If not paired, initiate pairing
+      if (identity['paired'] == false) {
+        await _initiatePairing();
+      }
+    } catch (e) {
+      print('Error connecting to Pi: $e');
+      setState(() {
+        _glassStatus = GlassStatus(
+          status: ConnectionStatus.disconnected,
+          batteryLevel: 0,
+        );
+      });
+    }
+  }
+  
+  Future<void> _initiatePairing() async {
+    try {
+      // Request pairing
+      await ApiService.requestPairing(
+        appId: 'sage-flutter-app-001',
+        appName: 'SAGE Flutter App',
+      );
+      
+      // Auto-confirm pairing for testing
+      await ApiService.confirmPairing(
+        appId: 'sage-flutter-app-001',
+        confirm: true,
+      );
+      
+      // Update status
+      setState(() {
+        _glassStatus = GlassStatus(
+          status: ConnectionStatus.connected,
+          batteryLevel: 85,
+        );
+      });
+      
+      print('✅ Paired successfully!');
+    } catch (e) {
+      print('❌ Pairing failed: $e');
+    }
   }
 
   void _onScroll() {
@@ -122,31 +181,134 @@ class _DashboardScreenState extends State<DashboardScreen>
       icon: Icons.translate_rounded,
       label: 'Translation',
       description: 'Translate text in real-time',
-      color: AppTheme.cyan, // Restored vibrant color for Translation
-      onTap: () => print('Translation tapped'),
+      color: AppTheme.cyan,
+      onTap: _handleTranslation,
     ),
     QuickAccessItem(
       icon: Icons.face_rounded,
       label: 'Face Recognition',
       description: 'Identify and analyze faces',
-      color: AppTheme.purple, // Restored vibrant color for Face Recognition
-      onTap: () => print('Face Recognition tapped'),
+      color: AppTheme.purple,
+      onTap: _handleFaceRecognition,
     ),
     QuickAccessItem(
       icon: Icons.remove_red_eye_rounded,
       label: 'Object Detection',
       description: 'Detect objects in your environment',
-      color: AppTheme.yellow, // Restored vibrant color for Object Detection
-      onTap: () => print('Object Detection tapped'),
+      color: AppTheme.yellow,
+      onTap: _handleObjectDetection,
     ),
     QuickAccessItem(
       icon: Icons.mic_rounded,
       label: 'Voice Assistant',
       description: 'Control with voice commands',
-      color: AppTheme.green, // Restored vibrant color for Voice Assistant
-      onTap: () => print('Voice Assistant tapped'),
+      color: AppTheme.green,
+      onTap: _handleVoiceAssistant,
     ),
   ];
+  
+  Future<void> _handleTranslation() async {
+    print('🌍 Translation started...');
+    try {
+      // Capture image from Pi
+      final camera = await ApiService.captureCamera();
+      final imageBase64 = camera['frame'];
+      
+      // Send to backend for translation
+      final result = await ApiService.translateImage(imageBase64: imageBase64);
+      
+      final translated = result['translation_result']['translated_text'];
+      
+      // Display on Pi HUD
+      await ApiService.displayHud(text: translated);
+      
+      print('✅ Translation: $translated');
+    } catch (e) {
+      print('❌ Translation failed: $e');
+    }
+  }
+  
+  Future<void> _handleFaceRecognition() async {
+    print('👤 Face recognition started...');
+    try {
+      // Capture image from Pi
+      final camera = await ApiService.captureCamera();
+      final imageBase64 = camera['frame'];
+      
+      // Send to backend for face recognition
+      final result = await ApiService.recognizeFaces(imageBase64: imageBase64);
+      
+      final facesDetected = result['faces_detected'];
+      if (facesDetected > 0) {
+        final names = (result['faces'] as List)
+            .map((f) => f['person_name'])
+            .join(', ');
+        
+        // Display on Pi HUD
+        await ApiService.displayHud(text: 'Hello, $names!');
+        
+        print('✅ Faces detected: $names');
+      } else {
+        await ApiService.displayHud(text: 'No faces detected');
+        print('ℹ️ No faces detected');
+      }
+    } catch (e) {
+      print('❌ Face recognition failed: $e');
+    }
+  }
+  
+  Future<void> _handleObjectDetection() async {
+    print('🔍 Object detection started...');
+    try {
+      // Capture image from Pi
+      final camera = await ApiService.captureCamera();
+      final imageBase64 = camera['frame'];
+      
+      // Send to backend for object detection
+      final result = await ApiService.detectObjects(imageBase64: imageBase64);
+      
+      final objectsDetected = result['objects_detected'];
+      if (objectsDetected > 0) {
+        final objects = (result['objects'] as List)
+            .map((o) => o['label'])
+            .take(3)
+            .join(', ');
+        
+        // Display on Pi HUD
+        await ApiService.displayHud(text: 'Detected: $objects');
+        
+        print('✅ Objects: $objects');
+      } else {
+        await ApiService.displayHud(text: 'No objects detected');
+        print('ℹ️ No objects detected');
+      }
+    } catch (e) {
+      print('❌ Object detection failed: $e');
+    }
+  }
+  
+  Future<void> _handleVoiceAssistant() async {
+    print('🎤 Voice assistant started...');
+    try {
+      // For now, use a test query
+      const query = "What's the weather today?";
+      
+      // Send to backend
+      final result = await ApiService.voiceAssistantQuery(query);
+      
+      final response = result['response_text'];
+      
+      // Display on Pi HUD
+      await ApiService.displayHud(text: response);
+      
+      // Speak through Pi
+      await ApiService.speak(response);
+      
+      print('✅ Response: $response');
+    } catch (e) {
+      print('❌ Voice assistant failed: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
