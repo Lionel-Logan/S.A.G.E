@@ -108,29 +108,6 @@ class _GlassStatusCardState extends State<GlassStatusCard>
               ],
             ),
           ),
-          
-          // Demo Toggle Button
-          if (widget.onToggle != null) ...[
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: widget.onToggle,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.gray800,
-                foregroundColor: AppTheme.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-              ),
-              child: Text(
-                'TOGGLE STATUS',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  letterSpacing: 2,
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );

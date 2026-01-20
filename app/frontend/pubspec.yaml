@@ -37,6 +37,13 @@ dependencies:
   http: ^1.1.0
   google_fonts: ^6.1.0  # For futuristic fonts
   flutter_svg: ^2.0.9   # For vector icons (optional)
+  
+  # Device pairing and connectivity
+  shared_preferences: ^2.2.2  # Persistent storage
+  permission_handler: ^11.1.0  # Runtime permissions
+  flutter_blue_plus: ^1.31.11  # Bluetooth connectivity
+  wifi_iot: ^0.3.19  # WiFi hotspot management
+  network_info_plus: ^5.0.1  # Network information
 
 dev_dependencies:
   flutter_test:

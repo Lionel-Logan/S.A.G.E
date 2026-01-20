@@ -10,11 +10,15 @@ class AppTheme {
   static const Color gray700 = Color(0xFF3A3A3A);
   static const Color gray500 = Color(0xFF6B6B6B);
   
-  // Accent Colors
-  static const Color cyan = Color(0xFF00D9FF);
-  static const Color purple = Color(0xFFFF00E5);
-  static const Color yellow = Color(0xFFFFE500);
-  static const Color green = Color(0xFF00FF94);
+  // Accent Colors - Cyan-based harmonious palette
+  static const Color cyan = Color(0xFF00D9FF);        // Primary cyan
+  static const Color purple = Color(0xFFB24BF3);      // Soft purple (complements cyan)
+  static const Color pink = Color(0xFFFF6BCB);        // Soft pink (harmonious)
+  static const Color blue = Color(0xFF4D9FFF);        // Light blue (analogous)
+  
+  // Legacy aliases for backward compatibility
+  static const Color yellow = pink;
+  static const Color green = blue;
 
   static ThemeData darkTheme = ThemeData(
     brightness: Brightness.dark,
