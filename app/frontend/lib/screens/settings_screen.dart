@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
-import '../models/setting_item.dart';
 import '../theme/app-theme.dart';
 import '../widgets/sidebar.dart';
-import '../widgets/setting_tile.dart';
-import '../widgets/setting_category_header.dart';
+import '../services/storage_service.dart';
+import '../models/paired_device.dart';
+import '../main.dart';
+import 'pairing_welcome_screen.dart';
+import 'pairing_mode_selection_screen.dart';
+import 'pairing_flow_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final Function(String) onNavigate;
@@ -19,240 +22,131 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen>
+    with SingleTickerProviderStateMixin {
   bool _sidebarOpen = false;
   final ScrollController _scrollController = ScrollController();
   
-  // Boilerplate state management for settings
-  bool _notificationsEnabled = true;
-  bool _autoConnect = true;
-  bool _voiceWakeEnabled = true;
-  bool _hapticFeedback = true;
-  String _translationLanguage = 'Spanish';
-  String _hudBrightness = 'Auto';
-  double _voiceSensitivity = 0.7;
+  PairedDevice? _pairedDevice;
+  DateTime? _pairingTimestamp;
+  Map<String, String>? _hotspotCredentials;
+  bool _isLoading = true;
+  
+  late AnimationController _animController;
+  late Animation<double> _fadeAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animController,
+        curve: Curves.easeOut,
+      ),
+    );
+    
+    _loadPairingData();
+    _animController.forward();
+  }
+
+  Future<void> _loadPairingData() async {
+    final device = await StorageService.getPairedDevice();
+    final timestamp = await StorageService.getPairingTimestamp();
+    final credentials = await StorageService.getHotspotCredentials();
+    
+    setState(() {
+      _pairedDevice = device;
+      _pairingTimestamp = timestamp;
+      _hotspotCredentials = credentials;
+      _isLoading = false;
+    });
+  }
 
   @override
   void dispose() {
     _scrollController.dispose();
+    _animController.dispose();
     super.dispose();
   }
 
-  List<SettingCategory> get _categories => [
-    SettingCategory(
-      title: 'DEVICE & CONNECTION',
-      description: 'Manage your SAGE glass connection and pairing',
-      items: [
-        SettingItem(
-          title: 'Auto-Connect',
-          description: 'Automatically connect to paired glass',
-          icon: Icons.wifi_rounded,
-          type: SettingType.toggle,
-          value: _autoConnect,
-          onToggle: (value) => setState(() => _autoConnect = value),
+  Future<void> _unpairDevice() async {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.gray900,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: AppTheme.purple.withOpacity(0.3)),
         ),
-        SettingItem(
-          title: 'Device Management',
-          description: 'Manage paired devices and connections',
-          icon: Icons.devices_rounded,
-          type: SettingType.navigation,
-          onNavigate: () => print('Navigate to device management'),
+        title: Row(
+          children: [
+            Icon(Icons.warning_rounded, color: AppTheme.purple),
+            const SizedBox(width: 12),
+            Text(
+              'Unpair Device?',
+              style: TextStyle(color: AppTheme.white),
+            ),
+          ],
         ),
-        SettingItem(
-          title: 'Battery Optimization',
-          description: 'Configure power saving settings',
-          icon: Icons.battery_charging_full_rounded,
-          type: SettingType.navigation,
-          onNavigate: () => print('Navigate to battery settings'),
+        content: Text(
+          'This will remove your SAGE Glass connection. You will need to pair again to use the device.',
+          style: TextStyle(color: AppTheme.gray500),
         ),
-      ],
-    ),
-    SettingCategory(
-      title: 'DISPLAY & HUD',
-      description: 'Customize your heads-up display experience',
-      items: [
-        SettingItem(
-          title: 'HUD Brightness',
-          description: 'Adjust display brightness level',
-          icon: Icons.brightness_6_rounded,
-          type: SettingType.dropdown,
-          selectedValue: _hudBrightness,
-          options: ['Low', 'Medium', 'High', 'Auto'],
-          onDropdownChanged: (value) => setState(() => _hudBrightness = value),
-        ),
-        SettingItem(
-          title: 'Display Position',
-          description: 'Adjust HUD text position and alignment',
-          icon: Icons.crop_free_rounded,
-          type: SettingType.navigation,
-          onNavigate: () => print('Navigate to display position'),
-        ),
-        SettingItem(
-          title: 'Text Size',
-          description: 'Configure readable text size',
-          icon: Icons.format_size_rounded,
-          type: SettingType.navigation,
-          onNavigate: () => print('Navigate to text size'),
-        ),
-      ],
-    ),
-    SettingCategory(
-      title: 'VOICE & AUDIO',
-      description: 'Voice assistant and audio settings',
-      items: [
-        SettingItem(
-          title: 'Voice Wake Word',
-          description: 'Enable "Hey Glass" wake word detection',
-          icon: Icons.mic_rounded,
-          type: SettingType.toggle,
-          value: _voiceWakeEnabled,
-          onToggle: (value) => setState(() => _voiceWakeEnabled = value),
-        ),
-        SettingItem(
-          title: 'Voice Sensitivity',
-          description: 'Adjust microphone sensitivity level',
-          icon: Icons.tune_rounded,
-          type: SettingType.slider,
-          sliderValue: _voiceSensitivity,
-          sliderMin: 0.0,
-          sliderMax: 1.0,
-          onSliderChanged: (value) => setState(() => _voiceSensitivity = value),
-        ),
-        SettingItem(
-          title: 'Audio Output',
-          description: 'Configure speaker and volume settings',
-          icon: Icons.volume_up_rounded,
-          type: SettingType.navigation,
-          onNavigate: () => print('Navigate to audio settings'),
-        ),
-      ],
-    ),
-    SettingCategory(
-      title: 'AI FEATURES',
-      description: 'Configure AI-powered capabilities',
-      items: [
-        SettingItem(
-          title: 'Translation Settings',
-          description: 'Default translation language and preferences',
-          icon: Icons.translate_rounded,
-          type: SettingType.navigation,
-          onNavigate: () => print('Navigate to translation settings'),
-        ),
-        SettingItem(
-          title: 'Face Recognition',
-          description: 'Manage known faces and privacy settings',
-          icon: Icons.face_rounded,
-          type: SettingType.navigation,
-          onNavigate: () => print('Navigate to face recognition'),
-        ),
-        SettingItem(
-          title: 'Object Detection',
-          description: 'Configure detection sensitivity and filters',
-          icon: Icons.remove_red_eye_rounded,
-          type: SettingType.navigation,
-          onNavigate: () => print('Navigate to object detection'),
-        ),
-        SettingItem(
-          title: 'AI Model Quality',
-          description: 'Balance between speed and accuracy',
-          icon: Icons.psychology_rounded,
-          type: SettingType.dropdown,
-          selectedValue: 'Balanced',
-          options: ['Fast', 'Balanced', 'Accurate'],
-          onDropdownChanged: (value) => print('AI quality: $value'),
-        ),
-      ],
-    ),
-    SettingCategory(
-      title: 'PRIVACY & SECURITY',
-      description: 'Control your data and privacy settings',
-      items: [
-        SettingItem(
-          title: 'Data Collection',
-          description: 'Manage usage data and analytics',
-          icon: Icons.analytics_rounded,
-          type: SettingType.navigation,
-          onNavigate: () => print('Navigate to data collection'),
-        ),
-        SettingItem(
-          title: 'Camera Privacy',
-          description: 'Control when camera can be used',
-          icon: Icons.camera_alt_rounded,
-          type: SettingType.navigation,
-          onNavigate: () => print('Navigate to camera privacy'),
-        ),
-        SettingItem(
-          title: 'Stored Data',
-          description: 'View and manage cached data',
-          icon: Icons.storage_rounded,
-          type: SettingType.navigation,
-          onNavigate: () => print('Navigate to stored data'),
-        ),
-      ],
-    ),
-    SettingCategory(
-      title: 'NOTIFICATIONS',
-      description: 'Manage alerts and notifications',
-      items: [
-        SettingItem(
-          title: 'Enable Notifications',
-          description: 'Receive alerts and updates',
-          icon: Icons.notifications_rounded,
-          type: SettingType.toggle,
-          value: _notificationsEnabled,
-          onToggle: (value) => setState(() => _notificationsEnabled = value),
-        ),
-        SettingItem(
-          title: 'Notification Style',
-          description: 'Choose how notifications appear',
-          icon: Icons.style_rounded,
-          type: SettingType.navigation,
-          onNavigate: () => print('Navigate to notification style'),
-        ),
-        SettingItem(
-          title: 'Haptic Feedback',
-          description: 'Vibrate for important notifications',
-          icon: Icons.vibration_rounded,
-          type: SettingType.toggle,
-          value: _hapticFeedback,
-          onToggle: (value) => setState(() => _hapticFeedback = value),
-        ),
-      ],
-    ),
-    SettingCategory(
-      title: 'ABOUT',
-      description: 'App information and support',
-      items: [
-        SettingItem(
-          title: 'Version',
-          description: 'SAGE v1.0.0 (Build 001)',
-          icon: Icons.info_rounded,
-          type: SettingType.navigation,
-          onNavigate: () => print('Navigate to version info'),
-        ),
-        SettingItem(
-          title: 'Help & Support',
-          description: 'Get help and contact support',
-          icon: Icons.help_rounded,
-          type: SettingType.navigation,
-          onNavigate: () => print('Navigate to help'),
-        ),
-        SettingItem(
-          title: 'Legal',
-          description: 'Terms of service and privacy policy',
-          icon: Icons.gavel_rounded,
-          type: SettingType.navigation,
-          onNavigate: () => print('Navigate to legal'),
-        ),
-      ],
-    ),
-  ];
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel', style: TextStyle(color: AppTheme.gray500)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.purple,
+            ),
+            child: Text('Unpair'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await StorageService.clearPairingData();
+      
+      if (mounted) {
+        // Navigate to root and replace with pairing flow
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (context) => const _RepairNavigator(),
+          ),
+          (route) => false,
+        );
+      }
+    }
+  }
+
+  void _repairDevice() async {
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const _RepairNavigator(),
+      ),
+    );
+    
+    // Reload pairing data after repairing
+    if (result == true || mounted) {
+      await _loadPairingData();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    int itemIndex = 0;
-
     return Scaffold(
+      backgroundColor: AppTheme.black,
       body: GestureDetector(
         onHorizontalDragEnd: (details) {
           if (details.primaryVelocity! > 0 && !_sidebarOpen) {
@@ -267,80 +161,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Column(
               children: [
                 // Header
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [AppTheme.black, Colors.transparent],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-                  ),
-                  child: SafeArea(
-                    bottom: false,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.menu_rounded),
-                            onPressed: () => setState(() => _sidebarOpen = true),
-                          ),
-                          Text(
-                            'SETTINGS',
-                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 4,
-                            ),
-                          ),
-                          const SizedBox(width: 48),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+                _buildHeader(),
 
-                // Scrollable Content
+                // Content
                 Expanded(
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                    itemCount: _categories.length,
-                    itemBuilder: (context, categoryIndex) {
-                      final category = _categories[categoryIndex];
-                      
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Category Header
-                          SettingCategoryHeader(
-                            title: category.title,
-                            description: category.description,
-                            index: itemIndex++,
-                          ),
-                          
-                          // Category Items
-                          ...category.items.map((item) {
-                            final currentIndex = itemIndex++;
-                            
-                            if (item.type == SettingType.slider) {
-                              return SettingSliderTile(
-                                item: item,
-                                index: currentIndex,
-                              );
-                            }
-                            
-                            return SettingTile(
-                              item: item,
-                              index: currentIndex,
-                            );
-                          }).toList(),
-                          
-                          const SizedBox(height: 8),
-                        ],
-                      );
-                    },
-                  ),
+                  child: _isLoading
+                      ? _buildLoadingState()
+                      : _buildContent(),
                 ),
               ],
             ),
@@ -368,5 +195,482 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [AppTheme.black, Colors.transparent],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.menu_rounded),
+                onPressed: () => setState(() => _sidebarOpen = true),
+              ),
+              Text(
+                'SETTINGS',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 4,
+                ),
+              ),
+              const SizedBox(width: 48),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return Center(
+      child: CircularProgressIndicator(
+        valueColor: AlwaysStoppedAnimation(AppTheme.cyan),
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: ListView(
+        controller: _scrollController,
+        padding: const EdgeInsets.all(24),
+        children: [
+          // Device Pairing Section
+          _buildSectionHeader('DEVICE PAIRING', 'Manage your SAGE Glass connection'),
+          const SizedBox(height: 16),
+          _buildPairedDeviceCard(),
+          const SizedBox(height: 24),
+          _buildConnectionDetails(),
+          
+          const SizedBox(height: 40),
+          
+          // Quick Actions
+          _buildSectionHeader('QUICK ACTIONS', 'Device management shortcuts'),
+          const SizedBox(height: 16),
+          _buildActionButton(
+            'Re-pair Device',
+            'Start a new pairing process',
+            Icons.refresh_rounded,
+            AppTheme.cyan,
+            _repairDevice,
+          ),
+          const SizedBox(height: 12),
+          _buildActionButton(
+            'Unpair Device',
+            'Remove current device connection',
+            Icons.link_off_rounded,
+            AppTheme.purple,
+            _unpairDevice,
+          ),
+          
+          const SizedBox(height: 40),
+          
+          // App Info
+          _buildSectionHeader('ABOUT', 'Application information'),
+          const SizedBox(height: 16),
+          _buildInfoCard(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title, String subtitle) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: AppTheme.cyan,
+            letterSpacing: 2,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          subtitle,
+          style: TextStyle(
+            fontSize: 14,
+            color: AppTheme.gray500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPairedDeviceCard() {
+    if (_pairedDevice == null) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: AppTheme.gray900,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: AppTheme.purple.withOpacity(0.3),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.error_outline_rounded,
+              color: AppTheme.purple,
+              size: 32,
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                'No device paired',
+                style: TextStyle(
+                  color: AppTheme.white,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppTheme.cyan.withOpacity(0.2),
+            AppTheme.purple.withOpacity(0.1),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppTheme.cyan.withOpacity(0.3),
+        ),
+      ),
+      child: Column(
+        children: [
+          // Device icon
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: [AppTheme.cyan, AppTheme.purple],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.cyan.withOpacity(0.3),
+                  blurRadius: 20,
+                  spreadRadius: 5,
+                ),
+              ],
+            ),
+            child: Icon(
+              Icons.blur_on_rounded,
+              size: 40,
+              color: AppTheme.white,
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Device name
+          Text(
+            _pairedDevice!.name,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: AppTheme.white,
+            ),
+          ),
+
+          const SizedBox(height: 8),
+
+          // Status badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppTheme.green.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppTheme.green.withOpacity(0.5)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppTheme.green,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'CONNECTED',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.green,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConnectionDetails() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppTheme.gray900,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppTheme.gray700,
+        ),
+      ),
+      child: Column(
+        children: [
+          _buildDetailRow(
+            'Device ID',
+            _pairedDevice?.id ?? 'Unknown',
+            Icons.fingerprint_rounded,
+          ),
+          const Divider(color: AppTheme.gray700, height: 24),
+          _buildDetailRow(
+            'Paired',
+            _pairingTimestamp != null
+                ? _pairedDevice!.getTimeSincePairing()
+                : 'Unknown',
+            Icons.access_time_rounded,
+          ),
+          const Divider(color: AppTheme.gray700, height: 24),
+          _buildDetailRow(
+            'Hotspot SSID',
+            _hotspotCredentials?['ssid'] ?? 'Not configured',
+            Icons.wifi_rounded,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value, IconData icon) {
+    return Row(
+      children: [
+        Icon(
+          icon,
+          color: AppTheme.cyan,
+          size: 20,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.gray500,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: AppTheme.white,
+                  fontWeight: FontWeight.bold,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActionButton(
+    String title,
+    String description,
+    IconData icon,
+    Color color,
+    VoidCallback onTap,
+  ) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppTheme.gray900,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: color.withOpacity(0.3),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                icon,
+                color: color,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.white,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    description,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.gray500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              color: color,
+              size: 16,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoCard() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppTheme.gray900,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppTheme.gray700,
+        ),
+      ),
+      child: Column(
+        children: [
+          _buildInfoRow('Version', 'SAGE v1.0.0'),
+          const Divider(color: AppTheme.gray700, height: 24),
+          _buildInfoRow('Build', '001'),
+          const Divider(color: AppTheme.gray700, height: 24),
+          _buildInfoRow('Platform', 'Flutter'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 14,
+            color: AppTheme.gray500,
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 14,
+            color: AppTheme.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Re-pairing navigator
+class _RepairNavigator extends StatefulWidget {
+  const _RepairNavigator();
+
+  @override
+  State<_RepairNavigator> createState() => _RepairNavigatorState();
+}
+
+class _RepairNavigatorState extends State<_RepairNavigator> {
+  int _currentStep = 0;
+  bool _isAutoMode = true;
+
+  void _goToModeSelection() {
+    setState(() {
+      _currentStep = 1;
+    });
+  }
+
+  void _startPairing(bool isAutoMode) {
+    setState(() {
+      _isAutoMode = isAutoMode;
+      _currentStep = 2;
+    });
+  }
+
+  void _completePairing() {
+    // Navigate to MainNavigator, removing all previous routes
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (context) => const MainNavigator(),
+      ),
+      (route) => false,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    switch (_currentStep) {
+      case 0:
+        return PairingWelcomeScreen(onContinue: _goToModeSelection);
+      case 1:
+        return PairingModeSelectionScreen(onModeSelected: _startPairing);
+      case 2:
+        return PairingFlowScreen(
+          isAutoMode: _isAutoMode,
+          onComplete: _completePairing,
+        );
+      default:
+        return PairingWelcomeScreen(onContinue: _goToModeSelection);
+    }
   }
 }

@@ -5,6 +5,7 @@ import '../widgets/sidebar.dart';
 import '../widgets/glass-status-card.dart';
 import '../widgets/quick-access-card.dart';
 import '../services/api_service.dart';
+import '../services/storage_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   final Function(String) onNavigate;
@@ -95,6 +96,28 @@ class _DashboardScreenState extends State<DashboardScreen>
   
   Future<void> _checkPiConnection() async {
     try {
+      // First check if we have a paired device from local storage
+      final isPaired = await StorageService.isPaired();
+      
+      if (!isPaired) {
+        setState(() {
+          _glassStatus = GlassStatus(
+            status: ConnectionStatus.disconnected,
+            batteryLevel: 0,
+          );
+        });
+        return;
+      }
+      
+      // If paired, show as connected and try to reach the Pi server
+      setState(() {
+        _glassStatus = GlassStatus(
+          status: ConnectionStatus.connected,
+          batteryLevel: 85,
+        );
+      });
+      
+      // Try to verify connection with Pi server
       final identity = await ApiService.getIdentity();
       setState(() {
         _glassStatus = GlassStatus(
@@ -105,16 +128,18 @@ class _DashboardScreenState extends State<DashboardScreen>
         );
       });
       
-      // If not paired, initiate pairing
+      // If not paired with Pi, initiate pairing
       if (identity['paired'] == false) {
         await _initiatePairing();
       }
     } catch (e) {
       print('Error connecting to Pi: $e');
+      // Even if Pi server is unreachable, show connected if locally paired
+      final isPaired = await StorageService.isPaired();
       setState(() {
         _glassStatus = GlassStatus(
-          status: ConnectionStatus.disconnected,
-          batteryLevel: 0,
+          status: isPaired ? ConnectionStatus.connected : ConnectionStatus.disconnected,
+          batteryLevel: isPaired ? 85 : 0,
         );
       });
     }
@@ -164,16 +189,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     _heroAnimController.dispose();
     _quickAccessAnimController.dispose();
     super.dispose();
-  }
-
-  void _toggleGlassStatus() {
-    setState(() {
-      _glassStatus = GlassStatus(
-        status: _glassStatus.isConnected 
-            ? ConnectionStatus.disconnected 
-            : ConnectionStatus.connected,
-      );
-    });
   }
 
   List<QuickAccessItem> get _quickAccessItems => [
@@ -386,7 +401,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                               opacity: heroScrollOpacity,
                               child: GlassStatusCard(
                                 status: _glassStatus,
-                                onToggle: _toggleGlassStatus,
                               ),
                             ),
                           ),
