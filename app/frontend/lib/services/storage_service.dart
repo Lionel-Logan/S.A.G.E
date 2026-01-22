@@ -1,13 +1,15 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../models/paired_device.dart';
+import 'network_service.dart';
 
 /// Service for managing persistent storage of pairing data
 class StorageService {
   static const String _keyPairingComplete = 'pairing_complete';
   static const String _keyPairedDevice = 'paired_device';
-  static const String _keyHotspotSSID = 'hotspot_ssid';
-  static const String _keyHotspotPassword = 'hotspot_password';
+  static const String _keyWiFiSSID = 'wifi_ssid';
+  static const String _keyWiFiPassword = 'wifi_password';
+  static const String _keyWiFiTimestamp = 'wifi_timestamp';
   static const String _keyPairingTimestamp = 'pairing_timestamp';
 
   /// Check if device has been paired
@@ -32,32 +34,79 @@ class StorageService {
     }
   }
 
-  /// Save pairing information
+  /// Save paired device only (without WiFi credentials)
+  static Future<void> savePairedDevice(PairedDevice device) async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    await prefs.setBool(_keyPairingComplete, true);
+    await prefs.setString(_keyPairedDevice, json.encode(device.toJson()));
+    await prefs.setString(_keyPairingTimestamp, DateTime.now().toIso8601String());
+  }
+
+  /// Save pairing information (deprecated - use savePairedDevice instead)
   static Future<void> savePairingData({
     required PairedDevice device,
     required String hotspotSSID,
     required String hotspotPassword,
   }) async {
-    final prefs = await SharedPreferences.getInstance();
-    
-    await prefs.setBool(_keyPairingComplete, true);
-    await prefs.setString(_keyPairedDevice, json.encode(device.toJson()));
-    await prefs.setString(_keyHotspotSSID, hotspotSSID);
-    await prefs.setString(_keyHotspotPassword, hotspotPassword);
-    await prefs.setString(_keyPairingTimestamp, DateTime.now().toIso8601String());
+    await savePairedDevice(device);
+    await saveWiFiCredentials(ssid: hotspotSSID, password: hotspotPassword);
   }
 
-  /// Get hotspot credentials
-  static Future<Map<String, String>?> getHotspotCredentials() async {
+  /// Save WiFi credentials
+  static Future<void> saveWiFiCredentials({
+    required String ssid,
+    required String password,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
-    final ssid = prefs.getString(_keyHotspotSSID);
-    final password = prefs.getString(_keyHotspotPassword);
+    
+    await prefs.setString(_keyWiFiSSID, ssid);
+    await prefs.setString(_keyWiFiPassword, password);
+    await prefs.setString(_keyWiFiTimestamp, DateTime.now().toIso8601String());
+  }
+
+  /// Get WiFi credentials
+  static Future<WiFiCredentials?> getWiFiCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    final ssid = prefs.getString(_keyWiFiSSID);
+    final password = prefs.getString(_keyWiFiPassword);
+    final timestampStr = prefs.getString(_keyWiFiTimestamp);
     
     if (ssid == null || password == null) return null;
     
+    DateTime? savedAt;
+    if (timestampStr != null) {
+      try {
+        savedAt = DateTime.parse(timestampStr);
+      } catch (e) {
+        // ignore
+      }
+    }
+    
+    return WiFiCredentials(
+      ssid: ssid,
+      password: password,
+      savedAt: savedAt,
+    );
+  }
+
+  /// Clear WiFi credentials
+  static Future<void> clearWiFiCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    await prefs.remove(_keyWiFiSSID);
+    await prefs.remove(_keyWiFiPassword);
+    await prefs.remove(_keyWiFiTimestamp);
+  }
+
+  /// Get hotspot credentials (deprecated - use getWiFiCredentials instead)
+  static Future<Map<String, String>?> getHotspotCredentials() async {
+    final creds = await getWiFiCredentials();
+    if (creds == null) return null;
+    
     return {
-      'ssid': ssid,
-      'password': password,
+      'ssid': creds.ssid,
+      'password': creds.password,
     };
   }
 
@@ -67,8 +116,9 @@ class StorageService {
     
     await prefs.remove(_keyPairingComplete);
     await prefs.remove(_keyPairedDevice);
-    await prefs.remove(_keyHotspotSSID);
-    await prefs.remove(_keyHotspotPassword);
+    await prefs.remove(_keyWiFiSSID);
+    await prefs.remove(_keyWiFiPassword);
+    await prefs.remove(_keyWiFiTimestamp);
     await prefs.remove(_keyPairingTimestamp);
   }
 

@@ -20,12 +20,11 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.frontend"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        // Application ID for SAGE app
+        applicationId = "com.sage.glass.mobile"
+        // Android 12+ (API 31) required for modern BLE features
+        minSdk = 31
+        targetSdk = 34
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }

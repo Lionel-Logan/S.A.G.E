@@ -6,6 +6,8 @@ import '../widgets/glass-status-card.dart';
 import '../widgets/quick-access-card.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
+import '../services/bluetooth_service.dart';
+import 'dart:async';
 
 class DashboardScreen extends StatefulWidget {
   final Function(String) onNavigate;
@@ -27,6 +29,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   late GlassStatus _glassStatus;
   final ScrollController _scrollController = ScrollController();
   double _scrollOffset = 0;
+  Timer? _connectivityCheckTimer;  // Periodic BLE connectivity check
   
   // Animation controllers for entrance
   late AnimationController _heroAnimController;
@@ -92,6 +95,11 @@ class _DashboardScreenState extends State<DashboardScreen>
     
     // Check Pi server connection and pairing status
     _checkPiConnection();
+    
+    // Start periodic BLE connectivity check every 3 seconds for real-time status updates
+    _connectivityCheckTimer = Timer.periodic(Duration(seconds: 3), (timer) {
+      _checkBLEConnectivity();
+    });
   }
   
   Future<void> _checkPiConnection() async {
@@ -109,39 +117,106 @@ class _DashboardScreenState extends State<DashboardScreen>
         return;
       }
       
-      // If paired, show as connected and try to reach the Pi server
-      setState(() {
-        _glassStatus = GlassStatus(
-          status: ConnectionStatus.connected,
-          batteryLevel: 85,
-        );
-      });
+      // Perform BLE connectivity check
+      await _checkBLEConnectivity();
       
-      // Try to verify connection with Pi server
-      final identity = await ApiService.getIdentity();
-      setState(() {
-        _glassStatus = GlassStatus(
-          status: identity['paired'] == true 
-              ? ConnectionStatus.connected 
-              : ConnectionStatus.disconnected,
-          batteryLevel: 85,
-        );
-      });
-      
-      // If not paired with Pi, initiate pairing
-      if (identity['paired'] == false) {
-        await _initiatePairing();
-      }
     } catch (e) {
       print('Error connecting to Pi: $e');
-      // Even if Pi server is unreachable, show connected if locally paired
-      final isPaired = await StorageService.isPaired();
       setState(() {
         _glassStatus = GlassStatus(
-          status: isPaired ? ConnectionStatus.connected : ConnectionStatus.disconnected,
-          batteryLevel: isPaired ? 85 : 0,
+          status: ConnectionStatus.disconnected,
+          batteryLevel: 0,
         );
       });
+    }
+  }
+  
+  Future<void> _checkBLEConnectivity() async {
+    try {
+      // Get paired device
+      final pairedDevice = await StorageService.getPairedDevice();
+      if (pairedDevice == null) {
+        if (mounted && _glassStatus.status != ConnectionStatus.disconnected) {
+          setState(() {
+            _glassStatus = GlassStatus(
+              status: ConnectionStatus.disconnected,
+              batteryLevel: 0,
+            );
+          });
+        }
+        return;
+      }
+      
+      // Only show searching state if currently disconnected (avoid flickering)
+      if (mounted && _glassStatus.status == ConnectionStatus.disconnected) {
+        setState(() {
+          _glassStatus = GlassStatus(
+            status: ConnectionStatus.searching,
+            batteryLevel: 0,
+            deviceName: pairedDevice.name,
+          );
+        });
+      }
+      
+      // Try to read status directly first (faster if already connected)
+      final statusData = await BluetoothService.readConnectionStatus(pairedDevice.id);
+      
+      if (statusData != null && mounted) {
+        // BLE communication successful, device is connected
+        if (_glassStatus.status != ConnectionStatus.connected) {
+          setState(() {
+            _glassStatus = GlassStatus(
+              status: ConnectionStatus.connected,
+              batteryLevel: 85,
+              deviceName: pairedDevice.name,
+            );
+          });
+        }
+        return;
+      }
+      
+      // If direct read failed, try connecting first
+      bool connectionSuccess = await BluetoothService.connectToDevice(pairedDevice.id);
+      
+      if (connectionSuccess) {
+        // Try reading status again after connection
+        final retryStatusData = await BluetoothService.readConnectionStatus(pairedDevice.id);
+        
+        if (retryStatusData != null && mounted) {
+          if (_glassStatus.status != ConnectionStatus.connected) {
+            setState(() {
+              _glassStatus = GlassStatus(
+                status: ConnectionStatus.connected,
+                batteryLevel: 85,
+                deviceName: pairedDevice.name,
+              );
+            });
+          }
+          return;
+        }
+      }
+      
+      // Still can't communicate, show disconnected
+      if (mounted && _glassStatus.status != ConnectionStatus.disconnected) {
+        setState(() {
+          _glassStatus = GlassStatus(
+            status: ConnectionStatus.disconnected,
+            batteryLevel: 0,
+          );
+        });
+      }
+    } catch (e) {
+      print('BLE connectivity check failed: $e');
+      if (mounted) {
+        setState(() {
+          _glassStatus = GlassStatus(
+            status: ConnectionStatus.disconnected,
+            batteryLevel: 0,
+          );
+        });
+      }
+    } catch (e) {
+      print('Error in BLE check: $e');
     }
   }
   
@@ -188,6 +263,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     _scrollController.dispose();
     _heroAnimController.dispose();
     _quickAccessAnimController.dispose();
+    _connectivityCheckTimer?.cancel();  // Cancel periodic check
     super.dispose();
   }
 

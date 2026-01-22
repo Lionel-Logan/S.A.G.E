@@ -8,7 +8,7 @@ class GlassStatus {
 
   GlassStatus({
     required this.status,
-    this.deviceName = 'SAGE Glass',
+    this.deviceName = 'S.A.G.E',
     this.batteryLevel = 100,
     this.lastConnected,
   });
