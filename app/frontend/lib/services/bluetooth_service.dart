@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../config/ble_config.dart';
+import '../models/bluetooth_device.dart';
 import 'dart:convert';
 
 /// Service for Bluetooth device scanning and connection
@@ -258,19 +259,18 @@ class BluetoothService {
     }
 
     try {
-      print('Reading connection status from device: $deviceId');
+      // Silenced: Reading connection status from device
       final device = BluetoothDevice.fromId(deviceId);
       
       // Ensure device is connected
       final isConnected = await device.isConnected;
       if (!isConnected) {
-        print('Device not connected, cannot read status');
         return null;
       }
       
       // Discover GATT services
       final services = await device.discoverServices();
-      print('Discovered ${services.length} services');
+      // Silenced: Discovered services log
       
       // Find the S.A.G.E credentials service
       for (var service in services) {
@@ -278,20 +278,20 @@ class BluetoothService {
           // Find the status characteristic
           for (var characteristic in service.characteristics) {
             if (characteristic.uuid.toString().toLowerCase() == BLEConfig.statusCharacteristicUuid.toLowerCase()) {
-              print('  Found status characteristic, reading...');
+              // Silenced: Found status characteristic log
               
               // Read status
               final value = await characteristic.read();
               final statusStr = String.fromCharCodes(value);
               
-              print('  Status data: $statusStr');
+              // Silenced: Status data log
               
               // Parse JSON
               try {
                 final statusData = json.decode(statusStr) as Map<String, dynamic>;
                 return statusData;
               } catch (e) {
-                print('  Error parsing status JSON: $e');
+                print('[ERROR] Failed to parse status JSON: $e');
                 return null;
               }
             }
@@ -299,10 +299,10 @@ class BluetoothService {
         }
       }
       
-      print('Status characteristic not found');
+      // Silenced: Status characteristic not found
       return null;
     } catch (e) {
-      print('Error reading connection status: $e');
+      print('[ERROR] Connection status read failed: $e');
       return null;
     }
   }
@@ -505,6 +505,339 @@ class BluetoothService {
       await device.disconnect();
     } catch (e) {
       print('Error disconnecting: $e');
+    }
+  }
+
+  /// Scan for Bluetooth audio devices on the Raspberry Pi
+  static Future<List<BluetoothAudioDevice>> scanBluetoothAudioDevices(String deviceId) async {
+    if (useMockMode) {
+      await Future.delayed(const Duration(seconds: 2));
+      return [
+        BluetoothAudioDevice(
+          mac: 'AA:BB:CC:DD:EE:F1',
+          name: 'Sony WH-1000XM4',
+          deviceClass: '0x240404',
+          deviceType: 'audio',
+          rssi: -45,
+          paired: false,
+          connected: false,
+          services: ['A2DP', 'AVRCP'],
+        ),
+        BluetoothAudioDevice(
+          mac: 'AA:BB:CC:DD:EE:F2',
+          name: 'AirPods Pro',
+          deviceClass: '0x240418',
+          deviceType: 'audio',
+          rssi: -55,
+          paired: false,
+          connected: false,
+          services: ['A2DP'],
+        ),
+        BluetoothAudioDevice(
+          mac: 'AA:BB:CC:DD:EE:F3',
+          name: 'JBL Speaker',
+          deviceClass: '0x24041C',
+          deviceType: 'audio',
+          rssi: -60,
+          paired: false,
+          connected: false,
+          services: ['A2DP'],
+        ),
+      ];
+    }
+
+    try {
+      print('[BT] 🔍 Scanning for Bluetooth devices...');
+      final device = BluetoothDevice.fromId(deviceId);
+      
+      // Ensure device is connected
+      final isConnected = await device.isConnected;
+      if (!isConnected) {
+        print('[BT] ✗ Device not connected');
+        return [];
+      }
+      
+      // Discover GATT services
+      final services = await device.discoverServices();
+      
+      // Find the S.A.G.E credentials service
+      for (var service in services) {
+        if (service.uuid.toString().toLowerCase() == BLEConfig.credentialsServiceUuid.toLowerCase()) {
+          // Find the Bluetooth scan characteristic
+          for (var characteristic in service.characteristics) {
+            if (characteristic.uuid.toString().toLowerCase() == BLEConfig.bluetoothScanCharacteristicUuid.toLowerCase()) {
+              print('[BT] ⏳ Triggering scan on Pi...');
+              
+              // Step 1: Write to trigger background scan
+              try {
+                await characteristic.write([0x01]);
+                print('[BT] ⏳ Scan triggered, waiting 12 seconds...');
+                
+                // Step 2: Wait for background scan to complete
+                await Future.delayed(const Duration(seconds: 12));
+              } catch (e) {
+                print('[BT] ⚠ Write failed, reading cached data: $e');
+              }
+              
+              // Step 3: Read cached results (instant)
+              print('[BT] 📡 Reading scan results...');
+              final value = await characteristic.read();
+              final devicesStr = String.fromCharCodes(value);
+              
+              print('[BT] Received ${value.length} bytes');
+              print('[BT] Data: $devicesStr');
+              
+              // Parse JSON array
+              try {
+                if (devicesStr.isEmpty || devicesStr == '[]') {
+                  print('[BT] ⚠ No devices found');
+                  return [];
+                }
+                
+                final devicesList = json.decode(devicesStr) as List<dynamic>;
+                
+                final audioDevices = devicesList
+                    .map((d) {
+                      print('[BT] Device: ${d['n'] ?? d['name']} (${d['m'] ?? d['mac']})');
+                      return BluetoothAudioDevice.fromJson(d as Map<String, dynamic>);
+                    })
+                    // TEMPORARILY REMOVED FILTER - SHOW ALL DEVICES
+                    // .where((d) => d.isAudioDevice)
+                    .toList();
+                
+                print('[BT] ✓ Found ${audioDevices.length} Bluetooth devices');
+                return audioDevices;
+              } catch (e) {
+                print('[BT] ✗ JSON parse error: $e');
+                print('[BT] Raw data: $devicesStr');
+                return [];
+              }
+            }
+          }
+        }
+      }
+      
+      print('[BT] ✗ Scan characteristic not found');
+      return [];
+    } catch (e) {
+      print('[BT] ✗ Scan failed: $e');
+      return [];
+    }
+  }
+
+  /// Pair with a Bluetooth audio device
+  static Future<bool> pairBluetoothDevice({
+    required String deviceId,
+    required String macAddress,
+  }) async {
+    if (useMockMode) {
+      await Future.delayed(const Duration(seconds: 3));
+      return true;
+    }
+
+    try {
+      print('Pairing with Bluetooth device: $macAddress');
+      final device = BluetoothDevice.fromId(deviceId);
+      
+      // Ensure device is connected
+      final isConnected = await device.isConnected;
+      if (!isConnected) {
+        print('Device not connected, cannot pair Bluetooth device');
+        return false;
+      }
+      
+      // Discover GATT services
+      final services = await device.discoverServices();
+      
+      // Find the S.A.G.E credentials service
+      for (var service in services) {
+        if (service.uuid.toString().toLowerCase() == BLEConfig.credentialsServiceUuid.toLowerCase()) {
+          // Find the Bluetooth connect characteristic
+          for (var characteristic in service.characteristics) {
+            if (characteristic.uuid.toString().toLowerCase() == BLEConfig.bluetoothConnectCharacteristicUuid.toLowerCase()) {
+              print('  Found Bluetooth connect characteristic');
+              
+              // Check write permission
+              if (!characteristic.properties.write && !characteristic.properties.writeWithoutResponse) {
+                print('  ERROR: Characteristic does not support write operations');
+                return false;
+              }
+              
+              // Format: JSON command
+              final commandJson = json.encode({
+                'mac': macAddress,
+                'action': 'pair',
+              });
+              final data = commandJson.codeUnits;
+              
+              print('  Sending pair command...');
+              
+              // Write command to characteristic
+              await characteristic.write(
+                data,
+                withoutResponse: characteristic.properties.writeWithoutResponse,
+              );
+              
+              print('  Pair command sent successfully!');
+              return true;
+            }
+          }
+        }
+      }
+      
+      print('Bluetooth connect characteristic not found');
+      return false;
+    } catch (e) {
+      print('Error pairing Bluetooth device: $e');
+      return false;
+    }
+  }
+
+  /// Connect to a paired Bluetooth audio device
+  static Future<bool> connectBluetoothDevice({
+    required String deviceId,
+    required String macAddress,
+  }) async {
+    if (useMockMode) {
+      await Future.delayed(const Duration(seconds: 2));
+      return true;
+    }
+
+    try {
+      print('Connecting to Bluetooth device: $macAddress');
+      final device = BluetoothDevice.fromId(deviceId);
+      
+      final isConnected = await device.isConnected;
+      if (!isConnected) {
+        print('Device not connected');
+        return false;
+      }
+      
+      final services = await device.discoverServices();
+      
+      for (var service in services) {
+        if (service.uuid.toString().toLowerCase() == BLEConfig.credentialsServiceUuid.toLowerCase()) {
+          for (var characteristic in service.characteristics) {
+            if (characteristic.uuid.toString().toLowerCase() == BLEConfig.bluetoothConnectCharacteristicUuid.toLowerCase()) {
+              final commandJson = json.encode({
+                'mac': macAddress,
+                'action': 'connect',
+              });
+              final data = commandJson.codeUnits;
+              
+              await characteristic.write(
+                data,
+                withoutResponse: characteristic.properties.writeWithoutResponse,
+              );
+              
+              print('Connect command sent successfully!');
+              return true;
+            }
+          }
+        }
+      }
+      
+      return false;
+    } catch (e) {
+      print('Error connecting Bluetooth device: $e');
+      return false;
+    }
+  }
+
+  /// Disconnect from a Bluetooth audio device
+  static Future<bool> disconnectBluetoothDevice({
+    required String deviceId,
+    required String macAddress,
+  }) async {
+    if (useMockMode) {
+      await Future.delayed(const Duration(seconds: 1));
+      return true;
+    }
+
+    try {
+      print('Disconnecting from Bluetooth device: $macAddress');
+      final device = BluetoothDevice.fromId(deviceId);
+      
+      final isConnected = await device.isConnected;
+      if (!isConnected) {
+        return false;
+      }
+      
+      final services = await device.discoverServices();
+      
+      for (var service in services) {
+        if (service.uuid.toString().toLowerCase() == BLEConfig.credentialsServiceUuid.toLowerCase()) {
+          for (var characteristic in service.characteristics) {
+            if (characteristic.uuid.toString().toLowerCase() == BLEConfig.bluetoothConnectCharacteristicUuid.toLowerCase()) {
+              final commandJson = json.encode({
+                'mac': macAddress,
+                'action': 'disconnect',
+              });
+              final data = commandJson.codeUnits;
+              
+              await characteristic.write(
+                data,
+                withoutResponse: characteristic.properties.writeWithoutResponse,
+              );
+              
+              print('Disconnect command sent successfully!');
+              return true;
+            }
+          }
+        }
+      }
+      
+      return false;
+    } catch (e) {
+      print('Error disconnecting Bluetooth device: $e');
+      return false;
+    }
+  }
+
+  /// Get current Bluetooth audio device connection status
+  static Future<Map<String, dynamic>?> getBluetoothDeviceStatus(String deviceId) async {
+    if (useMockMode) {
+      await Future.delayed(const Duration(milliseconds: 500));
+      return {
+        'status': 'connected',
+        'device': 'AA:BB:CC:DD:EE:F1',
+        'name': 'Sony WH-1000XM4',
+        'connected': true,
+      };
+    }
+
+    try {
+      final device = BluetoothDevice.fromId(deviceId);
+      
+      final isConnected = await device.isConnected;
+      if (!isConnected) {
+        return null;
+      }
+      
+      final services = await device.discoverServices();
+      
+      for (var service in services) {
+        if (service.uuid.toString().toLowerCase() == BLEConfig.credentialsServiceUuid.toLowerCase()) {
+          for (var characteristic in service.characteristics) {
+            if (characteristic.uuid.toString().toLowerCase() == BLEConfig.bluetoothManageCharacteristicUuid.toLowerCase()) {
+              final value = await characteristic.read();
+              final statusStr = String.fromCharCodes(value);
+              
+              try {
+                return json.decode(statusStr) as Map<String, dynamic>;
+              } catch (e) {
+                print('Error parsing Bluetooth status: $e');
+                return null;
+              }
+            }
+          }
+        }
+      }
+      
+      return null;
+    } catch (e) {
+      print('Error getting Bluetooth device status: $e');
+      return null;
     }
   }
 }

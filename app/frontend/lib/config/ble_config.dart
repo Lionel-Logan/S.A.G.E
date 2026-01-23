@@ -72,6 +72,27 @@ class BLEConfig {
   /// Data Format: JSON {"paired_timestamp":"...", "firmware_version":"...", ...}
   static const String deviceInfoCharacteristicUuid = '12345678-1234-5678-1234-56789abcdef6';
   
+  /// Bluetooth Scan Characteristic (READ)
+  /// Used to get list of available Bluetooth audio devices from Pi
+  /// 
+  /// Properties: READ
+  /// Data Format: JSON array [{"mac":"...", "name":"...", "device_class":"...", "rssi":-45, ...}, ...]
+  static const String bluetoothScanCharacteristicUuid = '12345678-1234-5678-1234-56789abcdef7';
+  
+  /// Bluetooth Connect Characteristic (WRITE)
+  /// Used to send Bluetooth connection commands to Pi
+  /// 
+  /// Properties: WRITE
+  /// Data Format: JSON {"mac":"AA:BB:CC:DD:EE:FF", "action":"pair|connect|disconnect"}
+  static const String bluetoothConnectCharacteristicUuid = '12345678-1234-5678-1234-56789abcdef8';
+  
+  /// Bluetooth Manage Characteristic (READ)
+  /// Used to get current Bluetooth audio device connection status
+  /// 
+  /// Properties: READ
+  /// Data Format: JSON {"status":"idle|pairing|connected|...", "device":"...", "connected":true}
+  static const String bluetoothManageCharacteristicUuid = '12345678-1234-5678-1234-56789abcdef9';
+  
   // ============================================================================
   // DEVICE CONFIGURATION
   // ============================================================================

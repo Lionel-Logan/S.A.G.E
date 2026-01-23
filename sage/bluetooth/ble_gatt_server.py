@@ -9,6 +9,7 @@ import logging
 import subprocess
 import sys
 import time
+import traceback
 import dbus
 import dbus.service
 import dbus.mainloop.glib
@@ -29,6 +30,9 @@ SCAN_CHAR_UUID = '12345678-1234-5678-1234-56789abcdef3'  # WiFi scan
 NETWORK_DETAILS_CHAR_UUID = '12345678-1234-5678-1234-56789abcdef4'  # Network details
 BLUETOOTH_DETAILS_CHAR_UUID = '12345678-1234-5678-1234-56789abcdef5'  # BT details
 DEVICE_INFO_CHAR_UUID = '12345678-1234-5678-1234-56789abcdef6'  # Device info
+BLUETOOTH_SCAN_CHAR_UUID = '12345678-1234-5678-1234-56789abcdef7'  # BT audio scan
+BLUETOOTH_CONNECT_CHAR_UUID = '12345678-1234-5678-1234-56789abcdef8'  # BT connect/pair
+BLUETOOTH_MANAGE_CHAR_UUID = '12345678-1234-5678-1234-56789abcdef9'  # BT status
 DEVICE_NAME = 'SAGE Glass X1'
 
 # DBus Paths
@@ -330,9 +334,9 @@ class WiFiScanCharacteristic(Characteristic):
         logger.info('WiFi scan requested')
         networks = self.wifi_manager.scan_networks()
         
-        # Return as JSON array
+        # Return as JSON array (limited to top 5 to avoid 512-byte BLE limit)
         networks_json = json.dumps(networks)
-        logger.info(f'Returning {len(networks)} networks')
+        logger.info(f'Returning {len(networks)} networks (JSON size: {len(networks_json)} bytes)')
         return dbus.Array([dbus.Byte(c) for c in networks_json.encode()])
 
 
@@ -532,13 +536,146 @@ class DeviceInfoCharacteristic(Characteristic):
             return dbus.Array([dbus.Byte(c) for c in json.dumps({}).encode()])
 
 
+class BluetoothScanCharacteristic(Characteristic):
+    """Characteristic for scanning available Bluetooth audio devices"""
+    
+    def __init__(self, bus, index, service, bt_manager):
+        Characteristic.__init__(
+            self, bus, index,
+            BLUETOOTH_SCAN_CHAR_UUID,
+            ['read', 'write'],  # Use 'write' instead of 'write-without-response'
+            service)
+        self.bt_manager = bt_manager
+        self.cached_devices = '[]'  # Cache last scan result
+        self.last_scan_time = 0  # Timestamp of last scan
+        
+    def WriteValue(self, value, options):
+        """Trigger a new background scan when written to"""
+        try:
+            logger.info('Bluetooth scan triggered via write - starting background scan')
+            # Run scan in background and update cache
+            GLib.idle_add(self._background_scan)
+        except Exception as e:
+            logger.error(f'Error triggering Bluetooth scan: {e}')
+
+    def _background_scan(self):
+        """Run scan in background and cache results"""
+        try:
+            import time
+            logger.info('Background Bluetooth scan starting...')
+            self.last_scan_time = time.time()
+            
+            devices = self.bt_manager.scan_bluetooth_devices()
+            self.cached_devices = json.dumps(devices)
+            
+            logger.info(f'Background scan complete: {len(devices)} devices, {len(self.cached_devices)} bytes')
+        except Exception as e:
+            logger.error(f'Error in background scan: {e}')
+            self.cached_devices = '[]'
+        return False  # Don't repeat
+
+    def ReadValue(self, options):
+        """Return cached scan results instantly"""
+        try:
+            import time
+            logger.info('Bluetooth device list requested')
+            
+            # If cache is empty or very old (>5 minutes), do a quick scan
+            cache_age = time.time() - self.last_scan_time
+            if self.cached_devices == '[]' or cache_age > 300:
+                logger.info('Cache empty or stale, triggering background scan')
+                GLib.idle_add(self._background_scan)
+            
+            # Return cached data (may be empty if first read)
+            logger.info(f'Returning cached data: {len(self.cached_devices)} bytes')
+            return dbus.Array([dbus.Byte(c) for c in self.cached_devices.encode()])
+            
+        except Exception as e:
+            logger.error(f'Error in BluetoothScanCharacteristic.ReadValue: {e}')
+            logger.error(f'Traceback: {traceback.format_exc()}')
+            return dbus.Array([dbus.Byte(c) for c in b'[]'])
+
+
+class BluetoothConnectCharacteristic(Characteristic):
+    """Characteristic for pairing/connecting to Bluetooth audio devices"""
+    
+    def __init__(self, bus, index, service, bt_manager):
+        Characteristic.__init__(
+            self, bus, index,
+            BLUETOOTH_CONNECT_CHAR_UUID,
+            ['write', 'write-without-response'],
+            service)
+        self.bt_manager = bt_manager
+
+    def WriteValue(self, value, options):
+        """Called when mobile app writes Bluetooth connection command"""
+        try:
+            logger.info(f'!!! BluetoothConnectCharacteristic.WriteValue CALLED - Received {len(value)} bytes')
+            
+            # Convert DBus bytes to string
+            data_bytes = bytes(value)
+            data_str = data_bytes.decode('utf-8')
+            
+            logger.info(f'!!! WriteValue data: {data_str}')
+            
+            logger.info(f'Bluetooth connection command received: {len(data_str)} bytes')
+            
+            # Parse JSON
+            command = json.loads(data_str)
+            mac_address = command.get('mac')
+            action = command.get('action')  # 'pair', 'connect', 'disconnect'
+            
+            if not mac_address or not action:
+                logger.error('Missing mac_address or action in command')
+                raise InvalidArgsException('Missing mac_address or action')
+            
+            logger.info(f'Bluetooth {action} command for device: {mac_address}')
+            
+            # Execute action asynchronously
+            if action == 'pair':
+                GLib.idle_add(self.bt_manager.pair_device, mac_address)
+            elif action == 'connect':
+                GLib.idle_add(self.bt_manager.connect_device, mac_address)
+            elif action == 'disconnect':
+                GLib.idle_add(self.bt_manager.disconnect_device, mac_address)
+            else:
+                raise InvalidArgsException(f'Unknown action: {action}')
+            
+        except json.JSONDecodeError as e:
+            logger.error(f'Invalid JSON: {e}')
+            raise InvalidArgsException(f'Invalid JSON: {e}')
+        except Exception as e:
+            logger.error(f'Error processing Bluetooth command: {e}')
+            raise FailedException(str(e))
+
+
+class BluetoothManageCharacteristic(Characteristic):
+    """Characteristic for getting Bluetooth device connection status"""
+    
+    def __init__(self, bus, index, service, bt_manager):
+        Characteristic.__init__(
+            self, bus, index,
+            BLUETOOTH_MANAGE_CHAR_UUID,
+            ['read'],
+            service)
+        self.bt_manager = bt_manager
+
+    def ReadValue(self, options):
+        """Return current Bluetooth audio device status"""
+        logger.info('Bluetooth status requested')
+        status = self.bt_manager.get_connection_status()
+        
+        status_json = json.dumps(status)
+        return dbus.Array([dbus.Byte(c) for c in status_json.encode()])
+
+
 class SAGEGattService(Service):
     """Main SAGE GATT Service"""
     
-    def __init__(self, bus, index, wifi_manager):
+    def __init__(self, bus, index, wifi_manager, bt_manager):
         Service.__init__(self, bus, index, SERVICE_UUID, True)
         
-        # Add characteristics
+        # Add WiFi characteristics
         self.add_characteristic(CredentialsCharacteristic(bus, 0, self, wifi_manager))
         self.status_char = StatusCharacteristic(bus, 1, self, wifi_manager)
         self.add_characteristic(self.status_char)
@@ -546,6 +683,11 @@ class SAGEGattService(Service):
         self.add_characteristic(NetworkDetailsCharacteristic(bus, 3, self, wifi_manager))
         self.add_characteristic(BluetoothDetailsCharacteristic(bus, 4, self))
         self.add_characteristic(DeviceInfoCharacteristic(bus, 5, self))
+        
+        # Add Bluetooth Audio characteristics
+        self.add_characteristic(BluetoothScanCharacteristic(bus, 6, self, bt_manager))
+        self.add_characteristic(BluetoothConnectCharacteristic(bus, 7, self, bt_manager))
+        self.add_characteristic(BluetoothManageCharacteristic(bus, 8, self, bt_manager))
         
         # Set wifi manager callback
         wifi_manager.set_status_callback(self.status_char.send_status_update)
@@ -685,7 +827,10 @@ class WiFiManager:
             # Sort by signal strength (strongest first)
             networks.sort(key=lambda x: x['signal'], reverse=True)
             
-            logger.info(f'Found {len(networks)} networks')
+            # Limit to top 5 networks to avoid BLE 512-byte limit
+            networks = networks[:5]
+            
+            logger.info(f'Found {len(networks)} networks (limited to top 5)')
             return networks
             
         except Exception as e:
@@ -814,6 +959,206 @@ class WiFiManager:
             return False
 
 
+class BluetoothAudioManager:
+    """Manages Bluetooth audio device connections"""
+    
+    def __init__(self):
+        self.status = 'idle'
+        self.current_device = None
+        self.is_pairing = False
+    
+    def scan_bluetooth_devices(self):
+        """Scan for available Bluetooth devices and filter for audio devices"""
+        try:
+            logger.info('Scanning for Bluetooth audio devices...')
+            
+            # Use the bash script for scanning
+            script_path = '/home/sage/sage/scripts/connect_bluetooth.sh'
+            
+            result = subprocess.run(
+                ['sudo', script_path, 'scan'],
+                capture_output=True,
+                text=True,
+                timeout=15
+            )
+            
+            if result.returncode != 0:
+                logger.error(f'Bluetooth scan failed: {result.stderr}')
+                return []
+            
+            # Parse JSON output from script
+            try:
+                devices = json.loads(result.stdout)
+                logger.info(f'Found {len(devices)} Bluetooth devices')
+                return devices
+            except json.JSONDecodeError as e:
+                logger.error(f'Failed to parse scan results: {e}')
+                return []
+                
+        except subprocess.TimeoutExpired:
+            logger.error('Bluetooth scan timeout')
+            return []
+        except Exception as e:
+            logger.error(f'Error scanning Bluetooth devices: {e}')
+            return []
+    
+    def pair_device(self, mac_address):
+        """Pair with a Bluetooth audio device"""
+        if self.is_pairing:
+            logger.warning('Pairing already in progress')
+            return False
+        
+        self.is_pairing = True
+        self.status = 'pairing'
+        
+        try:
+            logger.info(f'Pairing with Bluetooth device: {mac_address}')
+            
+            script_path = '/home/sage/sage/scripts/connect_bluetooth.sh'
+            
+            result = subprocess.run(
+                ['sudo', script_path, 'pair', mac_address],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.stdout:
+                for line in result.stdout.split('\n'):
+                    if line.strip():
+                        logger.info(f'Script: {line}')
+            
+            if result.stderr:
+                for line in result.stderr.split('\n'):
+                    if line.strip():
+                        logger.warning(f'Script stderr: {line}')
+            
+            if result.returncode == 0:
+                logger.info(f'Successfully paired with device: {mac_address}')
+                self.status = 'paired'
+                self.current_device = mac_address
+                self.is_pairing = False
+                return True
+            else:
+                logger.error(f'Pairing failed with exit code: {result.returncode}')
+                self.status = 'failed'
+                self.is_pairing = False
+                return False
+                
+        except subprocess.TimeoutExpired:
+            logger.error('Pairing timeout (30 seconds)')
+            self.status = 'timeout'
+            self.is_pairing = False
+            return False
+        except Exception as e:
+            logger.error(f'Pairing error: {e}')
+            self.status = 'failed'
+            self.is_pairing = False
+            return False
+    
+    def connect_device(self, mac_address):
+        """Connect to a paired Bluetooth audio device"""
+        try:
+            logger.info(f'Connecting to Bluetooth device: {mac_address}')
+            
+            script_path = '/home/sage/sage/scripts/connect_bluetooth.sh'
+            
+            result = subprocess.run(
+                ['sudo', script_path, 'connect', mac_address],
+                capture_output=True,
+                text=True,
+                timeout=20
+            )
+            
+            if result.stdout:
+                for line in result.stdout.split('\n'):
+                    if line.strip():
+                        logger.info(f'Script: {line}')
+            
+            if result.returncode == 0:
+                logger.info(f'Successfully connected to device: {mac_address}')
+                self.status = 'connected'
+                self.current_device = mac_address
+                return True
+            else:
+                logger.error(f'Connection failed with exit code: {result.returncode}')
+                self.status = 'failed'
+                return False
+                
+        except subprocess.TimeoutExpired:
+            logger.error('Connection timeout (20 seconds)')
+            self.status = 'timeout'
+            return False
+        except Exception as e:
+            logger.error(f'Connection error: {e}')
+            self.status = 'failed'
+            return False
+    
+    def disconnect_device(self, mac_address):
+        """Disconnect from a Bluetooth audio device"""
+        try:
+            logger.info(f'Disconnecting from Bluetooth device: {mac_address}')
+            
+            script_path = '/home/sage/sage/scripts/connect_bluetooth.sh'
+            
+            result = subprocess.run(
+                ['sudo', script_path, 'disconnect', mac_address],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0:
+                logger.info(f'Successfully disconnected from device: {mac_address}')
+                self.status = 'disconnected'
+                self.current_device = None
+                return True
+            else:
+                logger.error(f'Disconnection failed')
+                return False
+                
+        except Exception as e:
+            logger.error(f'Disconnection error: {e}')
+            return False
+    
+    def get_connection_status(self):
+        """Get current Bluetooth audio device connection status"""
+        try:
+            script_path = '/home/sage/sage/scripts/connect_bluetooth.sh'
+            
+            result = subprocess.run(
+                ['sudo', script_path, 'status'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if result.returncode == 0:
+                try:
+                    status = json.loads(result.stdout)
+                    return status
+                except json.JSONDecodeError:
+                    return {
+                        'status': self.status,
+                        'device': self.current_device,
+                        'connected': False
+                    }
+            else:
+                return {
+                    'status': self.status,
+                    'device': self.current_device,
+                    'connected': False
+                }
+                
+        except Exception as e:
+            logger.error(f'Error getting Bluetooth status: {e}')
+            return {
+                'status': 'error',
+                'device': None,
+                'connected': False
+            }
+
+
 def find_adapter(bus):
     """Find Bluetooth adapter"""
     remote_om = dbus.Interface(bus.get_object(BLUEZ_SERVICE, '/'), DBUS_OM_IFACE)
@@ -847,11 +1192,14 @@ def main():
     # Create WiFi manager
     wifi_manager = WiFiManager()
     
+    # Create Bluetooth Audio manager
+    bt_manager = BluetoothAudioManager()
+    
     # Create application
     app = Application(bus)
     
     # Create service
-    service = SAGEGattService(bus, 0, wifi_manager)
+    service = SAGEGattService(bus, 0, wifi_manager, bt_manager)
     app.add_service(service)
     
     # Register application

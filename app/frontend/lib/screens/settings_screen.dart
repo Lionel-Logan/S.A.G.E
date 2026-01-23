@@ -8,6 +8,7 @@ import '../models/paired_device.dart';
 import '../main.dart';
 import 'pairing_flow_screen.dart';
 import 'network_settings_screen.dart';
+import 'bluetooth_settings_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final Function(String) onNavigate;
@@ -225,6 +226,19 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
     
     // Reload data after returning from network settings
+    if (mounted) {
+      await _loadPairingData();
+    }
+  }
+
+  void _openBluetoothSettings() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const BluetoothSettingsScreen(),
+      ),
+    );
+    
+    // Reload data after returning from Bluetooth settings
     if (mounted) {
       await _loadPairingData();
     }
@@ -682,6 +696,14 @@ class _SettingsScreenState extends State<SettingsScreen>
             Icons.wifi_rounded,
             AppTheme.cyan,
             _openNetworkSettings,
+          ),
+          const SizedBox(height: 12),
+          _buildActionButton(
+            'Bluetooth Settings',
+            'Manage Bluetooth audio devices',
+            Icons.bluetooth_audio,
+            AppTheme.purple,
+            _openBluetoothSettings,
           ),
           
           const SizedBox(height: 40),
