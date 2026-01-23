@@ -230,7 +230,7 @@ class _BluetoothSettingsScreenState extends State<BluetoothSettingsScreen> {
 
     setState(() {
       _isLoading = true;
-      _statusMessage = null;
+      _statusMessage = 'Disconnecting and forgetting device...';
     });
 
     try {
@@ -242,11 +242,11 @@ class _BluetoothSettingsScreenState extends State<BluetoothSettingsScreen> {
       setState(() {
         _isLoading = false;
         if (success) {
-          _statusMessage = 'Disconnected successfully';
+          _statusMessage = 'Device disconnected and forgotten';
           _isSuccess = true;
           _connectedDevice = null;
         } else {
-          _statusMessage = 'Failed to disconnect';
+          _statusMessage = 'Failed to disconnect device';
           _isSuccess = false;
         }
       });

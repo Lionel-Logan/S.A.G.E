@@ -149,37 +149,43 @@ pair_device() {
     bluetoothctl remove "$mac" >/dev/null 2>&1
     sleep 1
     
-    # Scan briefly to discover device
-    timeout 5 bluetoothctl --timeout 5 scan on >/dev/null 2>&1 &
-    sleep 5
-    bluetoothctl scan off >/dev/null 2>&1
-    
-    # Pair with device
+    # Pairing using bluetoothctl with scan on (device must be discovered while pairing)
     echo "Attempting to pair..." >&2
-    if bluetoothctl pair "$mac" 2>&1 | grep -q "Pairing successful\|already paired"; then
+    
+    # Key insight: scan must remain ON during pairing
+    # Use here-document to send commands with delays
+    {
+        echo "scan on"
+        sleep 15
+        echo "pair $mac"
+        sleep 10
+        echo "trust $mac"
+        sleep 2
+        echo "connect $mac"
+        sleep 3
+        echo "scan off"
+        sleep 1
+        echo "exit"
+    } | sudo bluetoothctl 2>&1 | tee /tmp/bt_pair_$$.log >&2
+    
+    # Check if pairing was successful by examining the log
+    if grep -q "Pairing successful\|Bonded: yes" /tmp/bt_pair_$$.log; then
         echo "Pairing successful" >&2
+        rm -f /tmp/bt_pair_$$.log
         
-        # Trust device for auto-reconnect
-        bluetoothctl trust "$mac" >/dev/null 2>&1
-        echo "Device trusted" >&2
-        
-        # Try to connect
-        echo "Attempting to connect..." >&2
-        if bluetoothctl connect "$mac" 2>&1 | grep -q "Connection successful\|already connected"; then
-            echo "Connection successful" >&2
-            
-            # Set as default audio output
-            setup_audio_output "$mac"
-            
-            exit 0
-        else
-            echo "Connected but audio setup may need manual configuration" >&2
+        # Verify device is paired
+        if sudo bluetoothctl info "$mac" 2>&1 | grep -q "Paired: yes"; then
+            echo "Device trusted and paired" >&2
             exit 0
         fi
-    else
-        echo "Pairing failed. Ensure device is in pairing mode." >&2
-        exit 1
     fi
+    
+    echo "Pairing failed. Please ensure:" >&2
+    echo "  1. Device is in pairing mode (LED flashing)" >&2
+    echo "  2. Device is close to the Pi" >&2
+    echo "  3. Device is not connected to another device" >&2
+    rm -f /tmp/bt_pair_$$.log
+    exit 1
 }
 
 # Function to connect to already paired device
@@ -211,7 +217,7 @@ connect_device() {
     fi
 }
 
-# Function to disconnect from device
+# Function to disconnect from device and forget it
 disconnect_device() {
     local mac="$1"
     
@@ -220,17 +226,26 @@ disconnect_device() {
         exit 1
     fi
     
-    echo "Disconnecting from device: $mac" >&2
+    echo "Disconnecting and removing device: $mac" >&2
     
-    if bluetoothctl disconnect "$mac" 2>&1 | grep -q "Successful"; then
-        echo "Disconnected successfully" >&2
+    # First disconnect
+    bluetoothctl disconnect "$mac" 2>&1 >&2
+    sleep 2
+    
+    # Then untrust
+    bluetoothctl untrust "$mac" 2>&1 >&2
+    sleep 1
+    
+    # Finally remove (forget) the device
+    if bluetoothctl remove "$mac" 2>&1 | grep -q "Device has been removed\|not available"; then
+        echo "Device disconnected and forgotten successfully" >&2
         
         # Reset to default audio output
         reset_audio_output
         
         exit 0
     else
-        echo "Disconnection failed" >&2
+        echo "Failed to remove device" >&2
         exit 1
     fi
 }

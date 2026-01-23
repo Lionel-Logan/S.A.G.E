@@ -966,6 +966,7 @@ class BluetoothAudioManager:
         self.status = 'idle'
         self.current_device = None
         self.is_pairing = False
+        self.is_disconnecting = False
     
     def scan_bluetooth_devices(self):
         """Scan for available Bluetooth devices and filter for audio devices"""
@@ -1058,6 +1059,11 @@ class BluetoothAudioManager:
     
     def connect_device(self, mac_address):
         """Connect to a paired Bluetooth audio device"""
+        # Check if already connected to this device
+        if self.status == 'connected' and self.current_device == mac_address:
+            logger.info(f'Already connected to device: {mac_address}')
+            return True
+        
         try:
             logger.info(f'Connecting to Bluetooth device: {mac_address}')
             
@@ -1096,6 +1102,17 @@ class BluetoothAudioManager:
     
     def disconnect_device(self, mac_address):
         """Disconnect from a Bluetooth audio device"""
+        if self.is_disconnecting:
+            logger.warning('Disconnect already in progress, ignoring request')
+            return False
+        
+        # Check if already disconnected
+        if self.status == 'disconnected' or self.current_device is None:
+            logger.info('Device already disconnected')
+            return True
+        
+        self.is_disconnecting = True
+        
         try:
             logger.info(f'Disconnecting from Bluetooth device: {mac_address}')
             
@@ -1112,13 +1129,16 @@ class BluetoothAudioManager:
                 logger.info(f'Successfully disconnected from device: {mac_address}')
                 self.status = 'disconnected'
                 self.current_device = None
+                self.is_disconnecting = False
                 return True
             else:
                 logger.error(f'Disconnection failed')
+                self.is_disconnecting = False
                 return False
                 
         except Exception as e:
             logger.error(f'Disconnection error: {e}')
+            self.is_disconnecting = False
             return False
     
     def get_connection_status(self):
