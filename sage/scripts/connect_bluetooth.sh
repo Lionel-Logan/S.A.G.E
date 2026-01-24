@@ -344,19 +344,19 @@ reset_audio_output() {
 # Function to get current status
 get_status() {
     # Check for connected Bluetooth audio devices
-    # AVOID calling bluetoothctl info on connected devices as it can disrupt A2DP connections
     connected_device=""
     device_name=""
 
-    # Use pactl to check for active Bluetooth audio sinks (less intrusive)
+    # Use pactl to check for active Bluetooth audio sinks
     if command -v pactl >/dev/null 2>&1; then
         # Check if PulseAudio has active Bluetooth sinks
         bt_sink=$(pactl list short sinks | grep -i "bluez" | head -1)
         if [ -n "$bt_sink" ]; then
-            # Extract MAC address from sink name (format: bluez_sink.MAC_ADDRESS.a2dp_sink)
+            # Extract MAC address from sink name (format: bluez_output.MAC.a2dp-sink or bluez_sink.MAC.a2dp_sink)
             sink_name=$(echo "$bt_sink" | awk '{print $2}')
-            if [[ "$sink_name" =~ bluez_sink\.([0-9A-F:]+)\. ]]; then
-                connected_device="${BASH_REMATCH[1]}"
+            if [[ "$sink_name" =~ bluez_(output|sink)\.([0-9A-Fa-f_]+)\. ]]; then
+                mac_underscores="${BASH_REMATCH[2]}"
+                connected_device=$(echo "$mac_underscores" | sed 's/_/:/g')
                 # Get device name from bluetoothctl devices (safe, doesn't disrupt connection)
                 device_name=$(bluetoothctl devices | grep "$connected_device" | sed 's/.*Device.* //')
                 if [ -z "$device_name" ]; then
@@ -366,17 +366,16 @@ get_status() {
         fi
     fi
 
-    # Fallback: If no PulseAudio info, use minimal bluetoothctl check
+    # Fallback: If no PulseAudio info, check bluetoothctl devices
     if [ -z "$connected_device" ]; then
         while IFS= read -r line; do
             if [[ "$line" =~ Device\ ([0-9A-F:]+)\ (.+) ]]; then
                 mac="${BASH_REMATCH[1]}"
                 name="${BASH_REMATCH[2]}"
 
-                # Use a very quick check - just see if device exists in connected state
-                # Avoid full bluetoothctl info which disrupts connections
-                if bluetoothctl devices Connected 2>/dev/null | grep -q "$mac"; then
-                    # Quick class check without full info
+                # Check if device is connected (use info command)
+                if bluetoothctl info "$mac" 2>/dev/null | grep -q "Connected: yes"; then
+                    # Quick class check
                     device_class=$(bluetoothctl info "$mac" 2>/dev/null | grep "Class:" | awk '{print $2}' | head -1)
                     if [ -n "$device_class" ] && is_audio_device "$device_class" ""; then
                         connected_device="$mac"
@@ -387,7 +386,7 @@ get_status() {
             fi
         done < <(bluetoothctl devices 2>/dev/null)
     fi
-    
+
     if [ -n "$connected_device" ]; then
         echo "{\"status\":\"connected\",\"device\":\"$connected_device\",\"name\":\"$device_name\",\"connected\":true}"
     else
