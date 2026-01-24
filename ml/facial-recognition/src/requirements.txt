@@ -1,0 +1,26 @@
+# Face Recognition Service - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Web Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+
+# Face Recognition
+insightface==0.7.3
+onnxruntime==1.16.3  # Required by InsightFace
+
+# Image Processing
+opencv-python==4.9.0.80
+numpy==1.24.3
+Pillow==10.2.0
+
+# Database
+# SQLite is built into Python, no additional package needed
+
+# Optional: For better performance
+# onnxruntime-gpu==1.16.3  # Uncomment if you have CUDA GPU
+
+# Development Tools (optional)
+# pytest==7.4.3
+# httpx==0.26.0  # For testing API endpoints
