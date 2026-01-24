@@ -11,6 +11,57 @@ import 'dart:convert';
 /// Configuration is centralized in BLEConfig class
 /// Update UUIDs in lib/config/ble_config.dart to match your Raspberry Pi
 class BluetoothService {
+    /// Stream controller for Bluetooth audio status notifications
+    static final StreamController<Map<String, dynamic>?> _btStatusController = StreamController.broadcast();
+    static StreamSubscription<List<int>>? _btStatusSubscription;
+
+    /// Subscribe to Bluetooth audio status notifications
+    static Future<void> subscribeBluetoothStatusNotifications(String deviceId) async {
+      try {
+        final device = BluetoothDevice.fromId(deviceId);
+        final isConnected = await device.isConnected;
+        if (!isConnected) return;
+        final services = await device.discoverServices();
+        for (var service in services) {
+          if (service.uuid.toString().toLowerCase() == BLEConfig.credentialsServiceUuid.toLowerCase()) {
+            for (var characteristic in service.characteristics) {
+              if (characteristic.uuid.toString().toLowerCase() == BLEConfig.bluetoothManageCharacteristicUuid.toLowerCase()) {
+                // Enable notifications
+                await characteristic.setNotifyValue(true);
+                // Cancel previous subscription if any
+                await _btStatusSubscription?.cancel();
+                // Listen to value changes
+                _btStatusSubscription = characteristic.value.listen((value) {
+                  try {
+                    final statusStr = String.fromCharCodes(value);
+                    final statusData = json.decode(statusStr) as Map<String, dynamic>;
+                    _btStatusController.add(statusData);
+                  } catch (e) {
+                    print('Error parsing Bluetooth status notification: $e');
+                    _btStatusController.add(null);
+                  }
+                });
+                // Optionally, trigger an initial read
+                final initialValue = await characteristic.read();
+                try {
+                  final statusStr = String.fromCharCodes(initialValue);
+                  final statusData = json.decode(statusStr) as Map<String, dynamic>;
+                  _btStatusController.add(statusData);
+                } catch (e) {
+                  _btStatusController.add(null);
+                }
+                return;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        print('Error subscribing to Bluetooth status notifications: $e');
+      }
+    }
+
+    /// Expose Bluetooth audio status stream
+    static Stream<Map<String, dynamic>?> get bluetoothStatusStream => _btStatusController.stream;
   // Mock mode flag - set to false for production with real hardware
   static bool useMockMode = false;
 

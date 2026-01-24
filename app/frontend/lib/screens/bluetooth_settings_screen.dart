@@ -5,6 +5,9 @@ import '../services/storage_service.dart';
 import '../models/paired_device.dart';
 import '../models/bluetooth_device.dart';
 import 'dart:async';
+import '../models/pairing_step.dart';
+import '../widgets/pairing_step_widget.dart';
+import '../config/ble_config.dart';
 
 class BluetoothSettingsScreen extends StatefulWidget {
   const BluetoothSettingsScreen({Key? key}) : super(key: key);
@@ -14,6 +17,7 @@ class BluetoothSettingsScreen extends StatefulWidget {
 }
 
 class _BluetoothSettingsScreenState extends State<BluetoothSettingsScreen> {
+    StreamSubscription<Map<String, dynamic>?>? _btStatusStreamSub;
   bool _isLoading = false;
   bool _isScanning = false;
   bool _isPairing = false;
@@ -29,24 +33,42 @@ class _BluetoothSettingsScreenState extends State<BluetoothSettingsScreen> {
   void initState() {
     super.initState();
     _loadData();
-    _startStatusPolling();
+    _subscribeToBluetoothStatus();
   }
 
+  Future<void> _subscribeToBluetoothStatus() async {
+    // Wait for paired device to load
+    await Future.delayed(Duration(milliseconds: 300));
+    if (_pairedDevice == null) return;
+    await BluetoothService.subscribeBluetoothStatusNotifications(_pairedDevice!.id);
+    _btStatusStreamSub?.cancel();
+    _btStatusStreamSub = BluetoothService.bluetoothStatusStream.listen((statusData) {
+      if (statusData != null && mounted) {
+        setState(() {
+          _connectedDevice = statusData;
+        });
+      }
+    });
+  }
+
+  // Polling is now only used as a fallback if notifications are not available
   void _startStatusPolling() {
-    // Poll Bluetooth status every 3 seconds
     _statusPollTimer = Timer.periodic(Duration(seconds: 3), (timer) {
       _pollBluetoothStatus();
     });
-    // Initial poll
     _pollBluetoothStatus();
   }
 
   Future<void> _pollBluetoothStatus() async {
     if (_pairedDevice == null) return;
     
+    // CRITICAL: Stop polling when operations are in progress to prevent race conditions
+    if (_isPairing || _isLoading || _isScanning) {
+      print('Bluetooth status polling skipped - operation in progress');
+      return;
+    }
+    
     try {
-      await BluetoothService.connectToDevice(_pairedDevice!.id);
-      
       final statusData = await BluetoothService.getBluetoothDeviceStatus(_pairedDevice!.id);
       
       if (statusData != null && mounted) {
@@ -61,14 +83,21 @@ class _BluetoothSettingsScreenState extends State<BluetoothSettingsScreen> {
 
   Future<void> _loadData() async {
     final device = await StorageService.getPairedDevice();
-    
     setState(() {
       _pairedDevice = device;
     });
-    
-    // Auto-scan on load
     if (_pairedDevice != null) {
       _scanDevices();
+      // Subscribe to notifications after device is loaded
+      await BluetoothService.subscribeBluetoothStatusNotifications(_pairedDevice!.id);
+      _btStatusStreamSub?.cancel();
+      _btStatusStreamSub = BluetoothService.bluetoothStatusStream.listen((statusData) {
+        if (statusData != null && mounted) {
+          setState(() {
+            _connectedDevice = statusData;
+          });
+        }
+      });
     }
   }
 
@@ -87,14 +116,14 @@ class _BluetoothSettingsScreenState extends State<BluetoothSettingsScreen> {
         _availableDevices = devices;
         _isScanning = false;
         if (devices.isEmpty) {
-          _statusMessage = 'No audio devices found. Make sure your headphones are in pairing mode.';
+          _statusMessage = '⚠ No audio devices found.\n\nMake sure your headphones are:\n• In pairing mode (LED flashing)\n• Powered on and nearby\n• Not connected to another device';
           _isSuccess = false;
         }
       });
     } catch (e) {
       setState(() {
         _isScanning = false;
-        _statusMessage = 'Failed to scan devices: $e';
+        _statusMessage = '✗ Failed to scan for devices:\n\n$e\n\nPlease check that S.A.G.E Glass is connected and try again.';
         _isSuccess = false;
       });
     }
@@ -117,7 +146,7 @@ class _BluetoothSettingsScreenState extends State<BluetoothSettingsScreen> {
 
       if (!success) {
         setState(() {
-          _statusMessage = 'Failed to initiate pairing. Please try again.';
+          _statusMessage = '✗ Failed to initiate pairing with ${device.name}.\n\nPlease check:\n• S.A.G.E Glass is connected via BLE\n• Bluetooth service is running on the Pi\n• Try scanning again';
           _isSuccess = false;
           _isPairing = false;
         });
@@ -129,7 +158,7 @@ class _BluetoothSettingsScreenState extends State<BluetoothSettingsScreen> {
       
     } catch (e) {
       setState(() {
-        _statusMessage = 'Error pairing device: $e';
+        _statusMessage = '✗ Pairing error with ${device.name}:\n\n$e\n\nPlease check the connection and try again.';
         _isSuccess = false;
         _isPairing = false;
       });
@@ -137,7 +166,14 @@ class _BluetoothSettingsScreenState extends State<BluetoothSettingsScreen> {
   }
 
   Future<void> _waitForPairingCompletion(BluetoothAudioDevice device) async {
-    // Show progress dialog
+    // Show progress dialog with realtime step updates
+    PairingStep currentStep = PairingStep(
+      type: PairingStepType.audioPairing,
+      status: StepStatus.inProgress,
+    );
+
+    void Function(void Function())? setDialogState;
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -148,74 +184,126 @@ class _BluetoothSettingsScreenState extends State<BluetoothSettingsScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: AppTheme.cyan),
-              SizedBox(height: 24),
-              Text(
-                'Pairing with ${device.name}',
-                style: TextStyle(
-                  color: AppTheme.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: 12),
-              Text(
-                'Make sure your headphones are in pairing mode...',
-                style: TextStyle(
-                  color: AppTheme.gray500,
-                  fontSize: 14,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
+          content: StatefulBuilder(
+            builder: (context, setStateDialog) {
+              setDialogState = setStateDialog;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  PairingStepWidget(step: currentStep),
+                  SizedBox(height: 16),
+                  Text(
+                    currentStep.description,
+                    style: TextStyle(
+                      color: AppTheme.gray500,
+                      fontSize: 14,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
     );
 
-    // Poll for status (30 second timeout)
-    final deadline = DateTime.now().add(Duration(seconds: 30));
+    // Poll for status with configurable timeout/interval
+    final deadline = DateTime.now().add(BLEConfig.audioPairingTimeout);
     bool success = false;
 
+    // small delay to ensure dialog state's setter is captured
+    await Future.delayed(Duration(milliseconds: 150));
+
+    int idleCount = 0;
+    const int maxIdle = 3; // tolerate up to 3 idle/nulls before failing
     while (DateTime.now().isBefore(deadline)) {
-      await Future.delayed(Duration(seconds: 2));
-      
+      await Future.delayed(BLEConfig.audioPairingPollInterval);
+
       try {
         final status = await BluetoothService.getBluetoothDeviceStatus(_pairedDevice!.id);
-        
+
         if (status != null) {
-          final statusStr = status['status'] as String?;
+          print('[DEBUG] Pairing poll status: ${status.toString()}');
+          final statusStr = (status['status'] ?? '') as String;
           final connectedDevice = status['device'] as String?;
-          
-          if (statusStr == 'connected' && connectedDevice == device.mac) {
+
+          PairingStepType newType = PairingStepType.audioPairing;
+          if (statusStr.contains('pair')) {
+            newType = PairingStepType.audioPairing;
+          } else if (statusStr.contains('trust')) {
+            newType = PairingStepType.audioTrusting;
+          } else if (statusStr.contains('connect')) {
+            newType = PairingStepType.audioConnecting;
+          } else if (statusStr.contains('route') || statusStr.contains('routing')) {
+            newType = PairingStepType.audioRouting;
+          } else if (statusStr.contains('connected')) {
+            newType = PairingStepType.audioComplete;
+          } else if (statusStr.contains('failed') || statusStr.contains('error')) {
+            newType = PairingStepType.audioPairing;
+          }
+
+          currentStep = PairingStep(type: newType, status: StepStatus.inProgress);
+          setDialogState?.call(() {});
+
+          final deviceMatch = (connectedDevice ?? '').toString().toLowerCase() == device.mac.toLowerCase();
+          final explicitConnected = (status['connected'] == true);
+
+          if ((statusStr == 'connected' || statusStr.contains('connected') || explicitConnected) && deviceMatch) {
+            currentStep = PairingStep(type: PairingStepType.audioComplete, status: StepStatus.completed);
+            setDialogState?.call(() {});
             success = true;
             break;
           } else if (statusStr == 'failed') {
+            break;
+          } else if (statusStr == 'idle' || statusStr == '' || status == null) {
+            idleCount++;
+            if (idleCount >= maxIdle) {
+              print('[DEBUG] Too many idle/null status responses, breaking as failed.');
+              break;
+            }
+          } else {
+            idleCount = 0; // reset on any non-idle
+          }
+        } else {
+          idleCount++;
+          if (idleCount >= maxIdle) {
+            print('[DEBUG] Too many null status responses, breaking as failed.');
             break;
           }
         }
       } catch (e) {
         print('Error polling status: $e');
+        idleCount++;
+        if (idleCount >= maxIdle) {
+          print('[DEBUG] Too many errors/nulls, breaking as failed.');
+          break;
+        }
       }
+
     }
 
     // Close dialog
     if (mounted) {
       Navigator.of(context).pop();
-      
+
       setState(() {
         _isPairing = false;
         if (success) {
-          _statusMessage = 'Successfully paired and connected to ${device.name}!\nAudio output configured.';
+          _statusMessage = '✓ Successfully paired and connected to ${device.name}!\n\nAudio output is now configured.';
           _isSuccess = true;
           _selectedDevice = null;
-          _pollBluetoothStatus(); // Update connected device
+          _connectedDevice = {'device': device.mac, 'name': device.name, 'connected': true, 'status': 'connected'};
+
+          // Stop status polling for a stabilization window
+          _statusPollTimer?.cancel();
+          Future.delayed(Duration(seconds: BLEConfig.audioPostPairStabilizeSeconds), () {
+            if (mounted) {
+              _startStatusPolling(); // Restart polling after connection stabilizes
+            }
+          });
         } else {
-          _statusMessage = 'Pairing failed or timed out.\n\nPlease ensure:\n• Device is in pairing mode (hold power button)\n• Device is close to S.A.G.E\n• No other devices are trying to connect';
+          _statusMessage = '✗ Pairing with ${device.name} failed or timed out.\n\nPlease ensure:\n• Device is in pairing mode (LED flashing)\n• Hold power button for 5-10 seconds\n• Device is close to S.A.G.E Glass\n• Device is not connected to another device\n• Try again in a few seconds';
           _isSuccess = false;
         }
       });
@@ -226,11 +314,13 @@ class _BluetoothSettingsScreenState extends State<BluetoothSettingsScreen> {
     if (_pairedDevice == null || _connectedDevice == null) return;
     
     final mac = _connectedDevice!['device'] as String?;
+    final deviceName = _connectedDevice!['name'] as String? ?? 'Device';
     if (mac == null) return;
 
     setState(() {
       _isLoading = true;
-      _statusMessage = 'Disconnecting and forgetting device...';
+      _statusMessage = 'Disconnecting and forgetting $deviceName...';
+      _isSuccess = false;
     });
 
     try {
@@ -239,26 +329,49 @@ class _BluetoothSettingsScreenState extends State<BluetoothSettingsScreen> {
         macAddress: mac,
       );
 
-      setState(() {
-        _isLoading = false;
-        if (success) {
-          _statusMessage = 'Device disconnected and forgotten';
+      if (success) {
+        // Clear ALL device state immediately
+        setState(() {
+          _isLoading = false;
+          _statusMessage = '✓ $deviceName has been disconnected and forgotten.\n\nScanning for updated device list...';
           _isSuccess = true;
           _connectedDevice = null;
-        } else {
-          _statusMessage = 'Failed to disconnect device';
-          _isSuccess = false;
+          _availableDevices = []; // Clear stale scan results
+          _isScanning = true; // Show scanning state
+        });
+        
+        // Wait for Pi to complete unpairing, then rescan to get fresh device states
+        await Future.delayed(Duration(seconds: 3));
+        
+        if (mounted) {
+          // Rescan to show device as unpaired
+          await _scanDevices();
+          
+          // Update success message after scan
+          if (mounted) {
+            setState(() {
+              _statusMessage = '✓ $deviceName has been disconnected and forgotten.\n\nYou can pair it again by scanning for devices.';
+            });
+          }
         }
-      });
+      } else {
+        setState(() {
+          _isLoading = false;
+          _statusMessage = '✗ Failed to disconnect $deviceName.\n\nPlease try again or check if the device is still in range.';
+          _isSuccess = false;
+        });
+      }
       
-      // Refresh status
-      await Future.delayed(Duration(seconds: 1));
-      _pollBluetoothStatus();
+      // Wait before refreshing status to allow cooldown period
+      await Future.delayed(Duration(seconds: 2));
+      if (mounted && !_isLoading && !_isPairing) {
+        _pollBluetoothStatus();
+      }
       
     } catch (e) {
       setState(() {
         _isLoading = false;
-        _statusMessage = 'Error disconnecting: $e';
+        _statusMessage = '✗ Error disconnecting $deviceName:\n\n$e';
         _isSuccess = false;
       });
     }
@@ -671,6 +784,7 @@ class _BluetoothSettingsScreenState extends State<BluetoothSettingsScreen> {
   @override
   void dispose() {
     _statusPollTimer?.cancel();
+    _btStatusStreamSub?.cancel();
     super.dispose();
   }
 }

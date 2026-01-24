@@ -14,6 +14,12 @@ enum PairingStepType {
   // Manual mode specific
   manualScan,
   manualCredentials,
+  // Audio device pairing specific
+  audioPairing,
+  audioTrusting,
+  audioConnecting,
+  audioRouting,
+  audioComplete,
 }
 
 /// Step status
@@ -75,6 +81,16 @@ class PairingStep {
         return 'Select your SAGE Glass';
       case PairingStepType.manualCredentials:
         return 'Enter hotspot credentials';
+      case PairingStepType.audioPairing:
+        return 'Pairing audio device';
+      case PairingStepType.audioTrusting:
+        return 'Trusting audio device';
+      case PairingStepType.audioConnecting:
+        return 'Connecting audio device';
+      case PairingStepType.audioRouting:
+        return 'Routing audio output';
+      case PairingStepType.audioComplete:
+        return 'Audio pairing complete';
     }
   }
 
@@ -107,6 +123,16 @@ class PairingStep {
         return 'Choose your device from the list below';
       case PairingStepType.manualCredentials:
         return 'Enter your WiFi hotspot details';
+      case PairingStepType.audioPairing:
+        return 'Initiating Bluetooth pairing with the audio device';
+      case PairingStepType.audioTrusting:
+        return 'Marking the audio device as trusted';
+      case PairingStepType.audioConnecting:
+        return 'Establishing audio connection (A2DP)';
+      case PairingStepType.audioRouting:
+        return 'Routing system audio to the device';
+      case PairingStepType.audioComplete:
+        return 'Your audio device is paired and ready';
     }
   }
 
@@ -127,6 +153,16 @@ class PairingStep {
       case PairingStepType.hotspotDetection:
       case PairingStepType.manualCredentials:
         return 5;
+      case PairingStepType.audioPairing:
+        return 3;
+      case PairingStepType.audioTrusting:
+        return 4;
+      case PairingStepType.audioConnecting:
+        return 5;
+      case PairingStepType.audioRouting:
+        return 6;
+      case PairingStepType.audioComplete:
+        return 7;
       case PairingStepType.credentialTransfer:
         return 6;
       case PairingStepType.hotspotEnable:

@@ -656,17 +656,39 @@ class BluetoothManageCharacteristic(Characteristic):
         Characteristic.__init__(
             self, bus, index,
             BLUETOOTH_MANAGE_CHAR_UUID,
-            ['read'],
+            ['read', 'notify'],
             service)
         self.bt_manager = bt_manager
+        self.notifying = False
+        # Register callback for status updates
+        self.bt_manager.set_status_callback(self.send_status_update)
 
     def ReadValue(self, options):
         """Return current Bluetooth audio device status"""
         logger.info('Bluetooth status requested')
         status = self.bt_manager.get_connection_status()
-        
         status_json = json.dumps(status)
         return dbus.Array([dbus.Byte(c) for c in status_json.encode()])
+
+    def StartNotify(self):
+        if self.notifying:
+            return
+        self.notifying = True
+        logger.info('Bluetooth status notifications enabled')
+
+    def StopNotify(self):
+        if not self.notifying:
+            return
+        self.notifying = False
+        logger.info('Bluetooth status notifications disabled')
+
+    def send_status_update(self, status):
+        if not self.notifying:
+            return
+        status_json = json.dumps(status)
+        value = dbus.Array([dbus.Byte(c) for c in status_json.encode()])
+        self.PropertiesChanged(GATT_CHRC_IFACE, {'Value': value}, [])
+        logger.info(f'Sent Bluetooth status notification: {status}')
 
 
 class SAGEGattService(Service):
@@ -960,20 +982,24 @@ class WiFiManager:
 
 
 class BluetoothAudioManager:
-    """Manages Bluetooth audio device connections"""
+    """Manages Bluetooth audio device connections via bash script"""
     
     def __init__(self):
+        # Keep lightweight internal status to provide granular feedback
         self.status = 'idle'
         self.current_device = None
-        self.is_pairing = False
-        self.is_disconnecting = False
+        self.last_action_output = ''
+        self.action_in_progress = False
+        self.status_callback = None
+
+    def set_status_callback(self, callback):
+        self.status_callback = callback
     
     def scan_bluetooth_devices(self):
         """Scan for available Bluetooth devices and filter for audio devices"""
         try:
             logger.info('Scanning for Bluetooth audio devices...')
             
-            # Use the bash script for scanning
             script_path = '/home/sage/sage/scripts/connect_bluetooth.sh'
             
             result = subprocess.run(
@@ -989,11 +1015,12 @@ class BluetoothAudioManager:
             
             # Parse JSON output from script
             try:
-                devices = json.loads(result.stdout)
+                devices = json.loads(result.stdout.strip())
                 logger.info(f'Found {len(devices)} Bluetooth devices')
                 return devices
             except json.JSONDecodeError as e:
                 logger.error(f'Failed to parse scan results: {e}')
+                logger.error(f'Raw output: {result.stdout}')
                 return []
                 
         except subprocess.TimeoutExpired:
@@ -1004,145 +1031,250 @@ class BluetoothAudioManager:
             return []
     
     def pair_device(self, mac_address):
-        """Pair with a Bluetooth audio device"""
-        if self.is_pairing:
-            logger.warning('Pairing already in progress')
-            return False
-        
-        self.is_pairing = True
-        self.status = 'pairing'
-        
+        """Pair with a Bluetooth audio device using bash script"""
         try:
             logger.info(f'Pairing with Bluetooth device: {mac_address}')
-            
+            # If we're already connected to this device, skip redundant pairing
+            if self.current_device == mac_address and self.status in ('connected', 'connecting', 'routing', 'trusting'):
+                logger.info(f'Skip pairing: device {mac_address} already in state "{self.status}"')
+                return True
+            # Prevent concurrent actions
+            if self.action_in_progress:
+                logger.warning(f'Another Bluetooth action is already in progress, skipping pair for {mac_address}')
+                return False
+            self.action_in_progress = True
             script_path = '/home/sage/sage/scripts/connect_bluetooth.sh'
-            
-            result = subprocess.run(
+
+            # Set internal status for UI polling
+            self.status = 'pairing'
+            self.current_device = mac_address
+            if self.status_callback:
+                self.status_callback(self.get_connection_status())
+
+            # Run script and capture output incrementally to provide progress
+            proc = subprocess.Popen(
                 ['sudo', script_path, 'pair', mac_address],
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
-                timeout=30
             )
-            
-            if result.stdout:
-                for line in result.stdout.split('\n'):
-                    if line.strip():
-                        logger.info(f'Script: {line}')
-            
-            if result.stderr:
-                for line in result.stderr.split('\n'):
-                    if line.strip():
-                        logger.warning(f'Script stderr: {line}')
-            
-            if result.returncode == 0:
-                logger.info(f'Successfully paired with device: {mac_address}')
-                self.status = 'paired'
-                self.current_device = mac_address
-                self.is_pairing = False
+
+            output_lines = []
+            # Read lines as they are produced and update status heuristically
+            if proc.stdout:
+                for raw in proc.stdout:
+                    line = raw.strip()
+                    if not line:
+                        continue
+                    output_lines.append(line)
+                    logger.info(f'Script: {line}')
+
+                    # Heuristic transitions based on common keywords
+                    low = line.lower()
+                    if 'trust' in low or 'trusted' in low:
+                        self.status = 'trusting'
+                        if self.status_callback:
+                            self.status_callback(self.get_connection_status())
+                    elif 'connect' in low or 'connected' in low:
+                        self.status = 'connecting'
+                        if self.status_callback:
+                            self.status_callback(self.get_connection_status())
+                    elif 'a2dp' in low or 'route' in low or 'sink' in low:
+                        self.status = 'routing'
+                        if self.status_callback:
+                            self.status_callback(self.get_connection_status())
+
+            ret = proc.wait(timeout=60)
+            self.last_action_output = '\n'.join(output_lines)
+
+            success = (ret == 0)
+            if success:
+                # Quick verification: check bluetoothctl info
+                try:
+                    verify = subprocess.run(['bluetoothctl', 'info', mac_address], capture_output=True, text=True, timeout=3)
+                    if verify.returncode == 0 and 'Connected: yes' in verify.stdout:
+                        self.status = 'connected'
+                    else:
+                        self.status = 'connecting'
+                except Exception:
+                    self.status = 'connecting'
+                if self.status_callback:
+                    self.status_callback(self.get_connection_status())
+                logger.info(f'Pairing successful for {mac_address} (exit code: {ret})')
                 return True
             else:
-                logger.error(f'Pairing failed with exit code: {result.returncode}')
+                logger.error(f'Pairing failed for {mac_address} (exit code: {ret})')
                 self.status = 'failed'
-                self.is_pairing = False
+                if self.status_callback:
+                    self.status_callback(self.get_connection_status())
                 return False
-                
+
         except subprocess.TimeoutExpired:
-            logger.error('Pairing timeout (30 seconds)')
+            logger.error(f'Pairing timeout (60 seconds) for {mac_address}')
             self.status = 'timeout'
-            self.is_pairing = False
+            if self.status_callback:
+                self.status_callback(self.get_connection_status())
             return False
         except Exception as e:
-            logger.error(f'Pairing error: {e}')
+            logger.error(f'Pairing error for {mac_address}: {e}')
             self.status = 'failed'
-            self.is_pairing = False
+            if self.status_callback:
+                self.status_callback(self.get_connection_status())
             return False
+        finally:
+            self.action_in_progress = False
     
     def connect_device(self, mac_address):
-        """Connect to a paired Bluetooth audio device"""
-        # Check if already connected to this device
-        if self.status == 'connected' and self.current_device == mac_address:
-            logger.info(f'Already connected to device: {mac_address}')
-            return True
-        
+        """Connect to a paired Bluetooth audio device using bash script"""
         try:
             logger.info(f'Connecting to Bluetooth device: {mac_address}')
-            
             script_path = '/home/sage/sage/scripts/connect_bluetooth.sh'
-            
-            result = subprocess.run(
+
+            # If already connected to this device, skip
+            if self.current_device == mac_address and self.status == 'connected':
+                logger.info(f'Skip connect: device {mac_address} already connected')
+                return True
+            if self.action_in_progress:
+                logger.warning(f'Another Bluetooth action is already in progress, skipping connect for {mac_address}')
+                return False
+            self.action_in_progress = True
+
+            self.status = 'connecting'
+            self.current_device = mac_address
+            if self.status_callback:
+                self.status_callback(self.get_connection_status())
+
+            proc = subprocess.Popen(
                 ['sudo', script_path, 'connect', mac_address],
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
-                timeout=20
             )
-            
-            if result.stdout:
-                for line in result.stdout.split('\n'):
-                    if line.strip():
-                        logger.info(f'Script: {line}')
-            
-            if result.returncode == 0:
-                logger.info(f'Successfully connected to device: {mac_address}')
-                self.status = 'connected'
-                self.current_device = mac_address
+
+            output = []
+            if proc.stdout:
+                for raw in proc.stdout:
+                    line = raw.strip()
+                    if not line:
+                        continue
+                    output.append(line)
+                    logger.info(f'Script: {line}')
+                    low = line.lower()
+                    if 'a2dp' in low or 'sink' in low or 'route' in low:
+                        self.status = 'routing'
+                        if self.status_callback:
+                            self.status_callback(self.get_connection_status())
+
+            ret = proc.wait(timeout=30)
+            self.last_action_output = '\n'.join(output)
+            success = (ret == 0)
+
+            if success:
+                # Verify connected state
+                try:
+                    verify = subprocess.run(['bluetoothctl', 'info', mac_address], capture_output=True, text=True, timeout=3)
+                    if verify.returncode == 0 and 'Connected: yes' in verify.stdout:
+                        self.status = 'connected'
+                    else:
+                        self.status = 'connecting'
+                except Exception:
+                    self.status = 'connecting'
+                if self.status_callback:
+                    self.status_callback(self.get_connection_status())
+                logger.info(f'Connection successful for {mac_address} (exit code: {ret})')
                 return True
             else:
-                logger.error(f'Connection failed with exit code: {result.returncode}')
+                logger.error(f'Connection failed for {mac_address} (exit code: {ret})')
                 self.status = 'failed'
+                if self.status_callback:
+                    self.status_callback(self.get_connection_status())
                 return False
-                
+
         except subprocess.TimeoutExpired:
-            logger.error('Connection timeout (20 seconds)')
+            logger.error(f'Connection timeout (30 seconds) for {mac_address}')
             self.status = 'timeout'
+            if self.status_callback:
+                self.status_callback(self.get_connection_status())
             return False
         except Exception as e:
-            logger.error(f'Connection error: {e}')
+            logger.error(f'Connection error for {mac_address}: {e}')
             self.status = 'failed'
+            if self.status_callback:
+                self.status_callback(self.get_connection_status())
             return False
+        finally:
+            self.action_in_progress = False
     
     def disconnect_device(self, mac_address):
-        """Disconnect from a Bluetooth audio device"""
-        if self.is_disconnecting:
-            logger.warning('Disconnect already in progress, ignoring request')
-            return False
-        
-        # Check if already disconnected
-        if self.status == 'disconnected' or self.current_device is None:
-            logger.info('Device already disconnected')
-            return True
-        
-        self.is_disconnecting = True
-        
+        """Disconnect from a Bluetooth audio device using bash script"""
         try:
             logger.info(f'Disconnecting from Bluetooth device: {mac_address}')
-            
             script_path = '/home/sage/sage/scripts/connect_bluetooth.sh'
-            
-            result = subprocess.run(
+
+            self.status = 'disconnecting'
+            if self.status_callback:
+                self.status_callback(self.get_connection_status())
+
+            proc = subprocess.Popen(
                 ['sudo', script_path, 'disconnect', mac_address],
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
-                timeout=10
             )
-            
-            if result.returncode == 0:
-                logger.info(f'Successfully disconnected from device: {mac_address}')
-                self.status = 'disconnected'
+
+            output = []
+            if proc.stdout:
+                for raw in proc.stdout:
+                    line = raw.strip()
+                    if not line:
+                        continue
+                    output.append(line)
+                    logger.info(f'Script: {line}')
+
+            ret = proc.wait(timeout=15)
+            self.last_action_output = '\n'.join(output)
+            success = (ret == 0)
+
+            if success:
+                # Verify removal
+                try:
+                    verify = subprocess.run(['bluetoothctl', 'info', mac_address], capture_output=True, text=True, timeout=3)
+                    device_still_exists = (verify.returncode == 0)
+                except Exception:
+                    device_still_exists = True
+
+                if device_still_exists:
+                    logger.warning(f'Script succeeded but device {mac_address} still present')
+                    self.status = 'disconnected'
+                else:
+                    self.status = 'disconnected'
+                if self.status_callback:
+                    self.status_callback(self.get_connection_status())
+                logger.info(f'Disconnection successful for {mac_address} (exit code: {ret})')
                 self.current_device = None
-                self.is_disconnecting = False
                 return True
             else:
-                logger.error(f'Disconnection failed')
-                self.is_disconnecting = False
+                logger.error(f'Disconnection failed for {mac_address} (exit code: {ret})')
+                self.status = 'failed'
+                if self.status_callback:
+                    self.status_callback(self.get_connection_status())
                 return False
-                
+
+        except subprocess.TimeoutExpired:
+            logger.error(f'Disconnection timeout (15 seconds) for {mac_address}')
+            self.status = 'timeout'
+            if self.status_callback:
+                self.status_callback(self.get_connection_status())
+            return False
         except Exception as e:
-            logger.error(f'Disconnection error: {e}')
-            self.is_disconnecting = False
+            logger.error(f'Disconnection error for {mac_address}: {e}')
+            self.status = 'failed'
+            if self.status_callback:
+                self.status_callback(self.get_connection_status())
             return False
     
     def get_connection_status(self):
-        """Get current Bluetooth audio device connection status"""
+        """Get current Bluetooth audio device connection status from bash script"""
         try:
             script_path = '/home/sage/sage/scripts/connect_bluetooth.sh'
             
@@ -1153,29 +1285,59 @@ class BluetoothAudioManager:
                 timeout=5
             )
             
-            if result.returncode == 0:
+            if result.returncode == 0 and result.stdout.strip():
                 try:
-                    status = json.loads(result.stdout)
+                    status = json.loads(result.stdout.strip())
+                    logger.debug(f'Bluetooth status: {status}')
+                    # If the script reports "idle" but our internal status indicates
+                    # we're connected or routing, prefer the internal status to avoid
+                    # transient misses from PulseAudio timing.
+                    reported = status.get('status') if isinstance(status, dict) else None
+                    if reported == 'idle' and self.status in ('connected', 'routing', 'connecting', 'trusting'):
+                        logger.info('Status script returned idle but internal state is active; returning internal state')
+                        return {
+                            'status': self.status,
+                            'device': self.current_device,
+                            'connected': True if self.status == 'connected' else False,
+                            'debug': 'fallback-internal'
+                        }
+
                     return status
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as e:
+                    logger.error(f'Failed to parse status JSON: {e}')
+                    logger.error(f'Raw output: {result.stdout}')
                     return {
-                        'status': self.status,
-                        'device': self.current_device,
+                        'status': 'error',
+                        'device': None,
                         'connected': False
                     }
             else:
+                logger.warning(f'Status command failed (exit code: {result.returncode})')
+                if result.stderr.strip():
+                    logger.warning(f'Status stderr: {result.stderr.strip()}')
+                # Fallback to internal state so UI still sees progress
                 return {
                     'status': self.status,
                     'device': self.current_device,
-                    'connected': False
+                    'connected': True if self.status == 'connected' else False,
+                    'debug': self.last_action_output
                 }
                 
-        except Exception as e:
-            logger.error(f'Error getting Bluetooth status: {e}')
+        except subprocess.TimeoutExpired:
+            logger.error('Status check timeout')
             return {
                 'status': 'error',
                 'device': None,
                 'connected': False
+            }
+        except Exception as e:
+            logger.error(f'Error getting Bluetooth status: {e}')
+            # Fallback to internal state on exception
+            return {
+                'status': self.status,
+                'device': self.current_device,
+                'connected': True if self.status == 'connected' else False,
+                'debug': str(e)
             }
 
 

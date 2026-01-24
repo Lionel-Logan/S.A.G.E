@@ -113,6 +113,18 @@ class BLEConfig {
   /// Max Connection Retries
   /// Number of times to retry connection if it fails
   static const int maxConnectionRetries = 3;
+
+  /// Audio pairing polling interval
+  /// How often (duration) the app polls the Pi for audio pairing status
+  static const Duration audioPairingPollInterval = Duration(seconds: 2);
+
+  /// Audio pairing timeout
+  /// How long to wait for the entire audio pairing sequence before timing out
+  static const Duration audioPairingTimeout = Duration(seconds: 60);
+
+  /// Post-pair stabilization delay
+  /// After successful pairing, avoid status polling for this many seconds
+  static const int audioPostPairStabilizeSeconds = 15;
   
   // ============================================================================
   // VALIDATION
