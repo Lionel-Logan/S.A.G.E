@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.api.v1 import  translation, faces, objects, assistant
+from app.api.v1 import auth, translation, faces, objects, assistant
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -20,11 +20,10 @@ app.add_middleware(
 )
 
 # Include routers
-# app.include_router(auth.router, prefix=settings.API_V1_PREFIX) --not required now
-
-# app.include_router(translation.router, prefix=settings.API_V1_PREFIX) --will enable later
-# app.include_router(faces.router, prefix=settings.API_V1_PREFIX)
-# app.include_router(objects.router, prefix=settings.API_V1_PREFIX)
+app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
+app.include_router(translation.router, prefix=settings.API_V1_PREFIX)
+app.include_router(faces.router, prefix=settings.API_V1_PREFIX)
+app.include_router(objects.router, prefix=settings.API_V1_PREFIX)
 app.include_router(assistant.router, prefix=settings.API_V1_PREFIX)
 
 @app.get("/")

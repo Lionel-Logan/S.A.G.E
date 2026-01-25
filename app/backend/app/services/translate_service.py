@@ -1,54 +1,63 @@
-from app.services.gemini_service import GeminiService
-# from app.services.libre_service import LibreService # <--- NEW
+import httpx
+from typing import Optional
+from app.config import settings
 
 class TranslateService:
+    """
+    Client for LibreTranslate API
+    Uses the free public API or your self-hosted instance
+    """
+    
     def __init__(self):
-        # self.ocr_engine = GeminiService() # The "Eye" (extracts text)
-        # self.translator = LibreService()  # The "Linguist" (translates text)
-        # We use Gemini for BOTH reading (OCR) and translating
-        self.ai = GeminiService()
-
-    async def translate_text(self, text: str, target_lang: str = "fr") -> str:
-        
-        # "fr" is French. You can make this dynamic based on user settings later.
-        # --- DEBUG PRINT ---
-        # print(f"\n[LOG] 🟢 Route: TEXT ONLY -> Sending '{text}' to LibreTranslate...")
-        # # -------------------
-        # return await self.translator.translate(text, target_lang)
-        # Gemini is smart enough to handle the translation directly
-        prompt = f"Translate the following text to {target_lang}. Output ONLY the translated text.\n\nText: {text}"
-        return await self.ai.ask(prompt)
-
-    async def translate_image(self, image_data: str, target_lang: str = "fr") -> str:
-        # """
-        # Hybrid Pipeline:
-        # 1. Gemini extracts text (OCR).
-        # 2. LibreTranslate translates that text.
-        # """
-        # # Step 1: OCR (Using Gemini to just "Read")
-        # # --- DEBUG PRINT ---
-        # print(f"\n[LOG] 🔵 Route: VISION -> Sending Image to Gemini for OCR...")
-        # # -------------------
-        # ocr_prompt = "Read the text in this image. Output ONLY the raw text you see. Do not translate it yet."
-        # extracted_text = await self.ocr_engine.ask_with_image(ocr_prompt, image_data)
-        
-        # if not extracted_text or "error" in extracted_text.lower():
-        #     return "I could not read any text in that image."
-
-        # print(f"[DEBUG] Extracted Text: {extracted_text}")
-        # print(f"[LOG] 👁️ Gemini Saw: '{extracted_text}'")
-        # print(f"[LOG] 🟢 Handing over to LibreTranslate...")
-        # # Step 2: Translation (Using LibreTranslate)
-        # translated_text = await self.translator.translate(extracted_text, target_lang)
-        
-        # return f"Original: {extracted_text}\nTranslation: {translated_text}"
-
+        self.base_url = settings.LIBRETRANSLATE_URL
+        self.api_key = getattr(settings, 'LIBRETRANSLATE_API_KEY', None)
+    
+    async def translate(
+        self, 
+        text: str, 
+        source_lang: str = "auto", 
+        target_lang: str = "en"
+    ) -> dict:
         """
-        Scenario: User looks at a menu and wants it read in Spanish.
+        Translate text using LibreTranslate API
+        
+        Args:
+            text: Text to translate
+            source_lang: Source language code (e.g., "en", "hi", "es") or "auto"
+            target_lang: Target language code
+        
+        Returns:
+            dict with 'translatedText' and 'detectedLanguage' (if source was auto)
         """
-        # One-shot prompt: Look + Read + Translate
-        prompt = (
-            f"Look at this image. Extract the text and translate it directly into {target_lang}. "
-            f"Return the format: 'Original: [text] \n Translation: [text]'"
-        )
-        return await self.ai.ask_with_image(prompt, image_data)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            payload = {
+                "q": text,
+                "source": source_lang,
+                "target": target_lang,
+                "format": "text"
+            }
+            
+            # Add API key if available (for higher rate limits)
+            if self.api_key:
+                payload["api_key"] = self.api_key
+            
+            try:
+                response = await client.post(
+                    f"{self.base_url}/translate",
+                    json=payload,
+                    headers={"Content-Type": "application/json"}
+                )
+                response.raise_for_status()
+                return response.json()
+            
+            except httpx.HTTPStatusError as e:
+                raise Exception(f"Translation API error: {e.response.status_code} - {e.response.text}")
+            except Exception as e:
+                raise Exception(f"Translation failed: {str(e)}")
+    
+    async def get_supported_languages(self) -> list:
+        """Get list of supported languages"""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{self.base_url}/languages")
+            response.raise_for_status()
+            return response.json()
