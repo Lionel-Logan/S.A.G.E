@@ -1,0 +1,6 @@
+# This directory stores YOLO models
+# Models are auto-downloaded on first run from Ultralytics
+# You can manually place pre-downloaded models here:
+# - yolov8s.pt (recommended, ~22.5 MB)
+# - yolov8n.pt (nano, ~6.3 MB, faster but less accurate)
+# - yolov8m.pt (medium, ~49.2 MB, slower but more accurate)
