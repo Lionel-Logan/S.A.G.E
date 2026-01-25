@@ -91,73 +91,7 @@ class PairingService {
       
       _updateStep(PairingStepType.bluetoothConnect, StepStatus.completed);
 
-      // Step 5: Auto-detect hotspot credentials
-      _updateStep(PairingStepType.hotspotDetection, StepStatus.inProgress);
-      final credentials = await WiFiHotspotService.autoDetectHotspot();
-      
-      if (credentials == null || !credentials.isComplete) {
-        _updateStep(PairingStepType.hotspotDetection, StepStatus.failed,
-            error: 'Could not detect hotspot credentials. Please enter manually.');
-        return;
-      }
-      
-      _manualSSID = credentials.ssid;
-      _manualPassword = credentials.password;
-      
-      _updateStep(PairingStepType.hotspotDetection, StepStatus.completed,
-          data: {'ssid': credentials.ssid});
-
-      // Step 6: Send credentials to Glass
-      _updateStep(PairingStepType.credentialTransfer, StepStatus.inProgress);
-      final sent = await BluetoothService.sendCredentials(
-        deviceId: _selectedDeviceId!,
-        ssid: credentials.ssid,
-        password: credentials.password,
-      );
-      
-      if (!sent) {
-        _updateStep(PairingStepType.credentialTransfer, StepStatus.failed,
-            error: 'Failed to send credentials to Glass');
-        return;
-      }
-      
-      _updateStep(PairingStepType.credentialTransfer, StepStatus.completed);
-
-      // Step 7: Enable hotspot
-      _updateStep(PairingStepType.hotspotEnable, StepStatus.inProgress);
-      final enabled = await WiFiHotspotService.enableHotspot(
-        ssid: credentials.ssid,
-        password: credentials.password,
-      );
-      
-      if (!enabled) {
-        _updateStep(PairingStepType.hotspotEnable, StepStatus.failed,
-            error: 'Please enable WiFi hotspot manually');
-        // Don't return - guide user to enable manually
-      }
-      
-      _updateStep(PairingStepType.hotspotEnable, StepStatus.completed);
-
-      // Step 8: Wait for Glass to connect
-      _updateStep(PairingStepType.glassConnection, StepStatus.inProgress);
-      
-      bool glassConnected = false;
-      await for (final connected in WiFiHotspotService.waitForGlassConnection()) {
-        if (connected) {
-          glassConnected = true;
-          break;
-        }
-      }
-      
-      if (!glassConnected) {
-        _updateStep(PairingStepType.glassConnection, StepStatus.failed,
-            error: 'Glass did not connect to hotspot');
-        return;
-      }
-      
-      _updateStep(PairingStepType.glassConnection, StepStatus.completed);
-
-      // Step 9: Verify and save pairing
+      // Pairing complete - save device and finish
       await _completePairing(foundDevice.name, foundDevice.id);
       
     } catch (e) {
@@ -207,66 +141,20 @@ class PairingService {
     
     _updateStep(PairingStepType.bluetoothConnect, StepStatus.completed);
     
-    // Next: Wait for user to enter credentials
-    _updateStep(PairingStepType.manualCredentials, StepStatus.waitingForUser);
+    // Pairing complete - save device
+    await _completePairing('SAGE Glass', _selectedDeviceId!);
   }
 
-  /// Set hotspot credentials (manual mode)
+  /// Set hotspot credentials (manual mode) - now just completes pairing without WiFi
   Future<void> setHotspotCredentials(String ssid, String password) async {
     _manualSSID = ssid;
     _manualPassword = password;
     
-    _updateStep(PairingStepType.manualCredentials, StepStatus.completed,
-        data: {'ssid': ssid});
-    
-    // Send credentials
-    _updateStep(PairingStepType.credentialTransfer, StepStatus.inProgress);
-    final sent = await BluetoothService.sendCredentials(
-      deviceId: _selectedDeviceId!,
-      ssid: ssid,
-      password: password,
-    );
-    
-    if (!sent) {
-      _updateStep(PairingStepType.credentialTransfer, StepStatus.failed,
-          error: 'Failed to send credentials');
-      return;
-    }
-    
-    _updateStep(PairingStepType.credentialTransfer, StepStatus.completed);
-    
-    // Guide user to enable hotspot
-    _updateStep(PairingStepType.hotspotEnable, StepStatus.waitingForUser);
-  }
-
-  /// User confirms hotspot is enabled
-  Future<void> confirmHotspotEnabled() async {
-    _updateStep(PairingStepType.hotspotEnable, StepStatus.completed);
-    
-    // Wait for Glass connection
-    _updateStep(PairingStepType.glassConnection, StepStatus.inProgress);
-    
-    bool glassConnected = false;
-    await for (final connected in WiFiHotspotService.waitForGlassConnection()) {
-      if (connected) {
-        glassConnected = true;
-        break;
-      }
-    }
-    
-    if (!glassConnected) {
-      _updateStep(PairingStepType.glassConnection, StepStatus.failed,
-          error: 'Glass did not connect to hotspot');
-      return;
-    }
-    
-    _updateStep(PairingStepType.glassConnection, StepStatus.completed);
-    
-    // Complete pairing
+    // Just complete pairing - WiFi will be configured in settings later
     await _completePairing('SAGE Glass', _selectedDeviceId!);
   }
 
-  /// Complete and save pairing
+  /// Complete and save pairing (BLE only - no WiFi credentials needed yet)
   Future<void> _completePairing(String deviceName, String deviceId) async {
     _updateStep(PairingStepType.verification, StepStatus.inProgress);
     
@@ -276,11 +164,8 @@ class PairingService {
       pairedAt: DateTime.now(),
     );
     
-    await StorageService.savePairingData(
-      device: device,
-      hotspotSSID: _manualSSID!,
-      hotspotPassword: _manualPassword!,
-    );
+    // Save device only - WiFi will be configured later in settings
+    await StorageService.savePairedDevice(device);
     
     _updateStep(PairingStepType.verification, StepStatus.completed);
     _updateStep(PairingStepType.complete, StepStatus.completed);

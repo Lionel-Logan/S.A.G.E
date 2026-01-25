@@ -27,6 +27,7 @@ class _PairingFlowScreenState extends State<PairingFlowScreen>
   late PairingService _pairingService;
   PairingStep _currentStep = PairingStep.initial();
   StreamSubscription? _stepSubscription;
+  bool _showRetryButton = false;
 
   // For manual mode
   List<BluetoothDeviceInfo> _scannedDevices = [];
@@ -67,6 +68,10 @@ class _PairingFlowScreenState extends State<PairingFlowScreen>
     _stepSubscription = _pairingService.stepStream.listen((step) {
       setState(() {
         _currentStep = step;
+        // Show retry button on failure
+        if (step.isFailed) {
+          _showRetryButton = true;
+        }
       });
 
       // Animate progress
@@ -215,6 +220,38 @@ class _PairingFlowScreenState extends State<PairingFlowScreen>
                 Expanded(
                   child: _buildStepContent(),
                 ),
+                
+                // Retry button (shown on failure)
+                if (_showRetryButton)
+                  Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _retryPairing,
+                        icon: Icon(Icons.refresh_rounded, color: AppTheme.white),
+                        label: Text(
+                          'RETRY PAIRING',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.white,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.cyan,
+                          foregroundColor: AppTheme.white,
+                          padding: const EdgeInsets.symmetric(vertical: 18),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 8,
+                          shadowColor: AppTheme.cyan.withOpacity(0.5),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ],
@@ -297,11 +334,6 @@ class _PairingFlowScreenState extends State<PairingFlowScreen>
     if (_currentStep.type == PairingStepType.manualCredentials &&
         _currentStep.isWaitingForUser) {
       return _buildManualCredentialsUI();
-    }
-
-    if (_currentStep.type == PairingStepType.hotspotEnable &&
-        _currentStep.isWaitingForUser) {
-      return _buildHotspotEnableUI();
     }
 
     // Default step view
@@ -624,7 +656,7 @@ class _PairingFlowScreenState extends State<PairingFlowScreen>
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Enter your phone\'s WiFi hotspot credentials',
+                    'Enable your phone\'s WiFi hotspot first, then enter its name (SSID) and password below',
                     style: TextStyle(
                       color: AppTheme.white,
                       fontSize: 13,
@@ -732,91 +764,13 @@ class _PairingFlowScreenState extends State<PairingFlowScreen>
     );
   }
 
-  Widget _buildHotspotEnableUI() {
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.wifi_tethering_rounded,
-            size: 80,
-            color: AppTheme.cyan,
-          ),
-
-          const SizedBox(height: 32),
-
-          Text(
-            'Enable WiFi Hotspot',
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: AppTheme.white,
-            ),
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: 16),
-
-          Text(
-            'Please enable your phone\'s WiFi hotspot with the credentials you just entered',
-            style: TextStyle(
-              fontSize: 16,
-              color: AppTheme.gray500,
-            ),
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: 48),
-
-          // Instructions
-          _buildInstructionStep(
-            1,
-            'Open your phone settings',
-          ),
-          _buildInstructionStep(
-            2,
-            'Go to "Mobile Hotspot" or "Tethering"',
-          ),
-          _buildInstructionStep(
-            3,
-            'Enable WiFi Hotspot',
-          ),
-          _buildInstructionStep(
-            4,
-            'Return to this app and confirm',
-          ),
-
-          const SizedBox(height: 48),
-
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () {
-                _pairingService.confirmHotspotEnabled();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.cyan,
-                foregroundColor: AppTheme.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: Text(
-                'HOTSPOT IS ENABLED',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1,
-                  color: AppTheme.white,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+  void _retryPairing() {
+    setState(() {
+      _showRetryButton = false;
+      _currentStep = PairingStep.initial();
+      _scannedDevices.clear();
+    });
+    _pairingService.startPairing();
   }
 
   Widget _buildInstructionStep(int number, String text) {

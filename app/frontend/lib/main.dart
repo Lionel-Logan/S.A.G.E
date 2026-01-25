@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'dart:async';
 import 'theme/app-theme.dart';
 import 'screens/dashboard-screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/pairing_welcome_screen.dart';
-import 'screens/pairing_mode_selection_screen.dart';
 import 'screens/pairing_flow_screen.dart';
+import 'screens/bluetooth_enable_screen.dart';
 import 'services/storage_service.dart';
 
 void main() {
@@ -58,16 +60,45 @@ class AppInitializer extends StatefulWidget {
 class _AppInitializerState extends State<AppInitializer> {
   bool _isLoading = true;
   bool _isPaired = false;
+  bool _bluetoothOn = false;
+  StreamSubscription? _bluetoothSubscription;
 
   @override
   void initState() {
     super.initState();
     _checkPairingStatus();
+    _listenToBluetoothState();
+  }
+
+  @override
+  void dispose() {
+    _bluetoothSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _listenToBluetoothState() {
+    _bluetoothSubscription = FlutterBluePlus.adapterState.listen((state) {
+      if (mounted) {
+        setState(() {
+          _bluetoothOn = state == BluetoothAdapterState.on;
+        });
+      }
+    });
   }
 
   Future<void> _checkPairingStatus() async {
     // Check if device is already paired
     final isPaired = await StorageService.isPaired();
+    
+    // Check Bluetooth state
+    try {
+      final isOn = await FlutterBluePlus.isOn;
+      setState(() {
+        _bluetoothOn = isOn;
+      });
+    } catch (e) {
+      print('Error checking Bluetooth: $e');
+    }
     
     setState(() {
       _isPaired = isPaired;
@@ -89,8 +120,19 @@ class _AppInitializerState extends State<AppInitializer> {
       );
     }
 
+    // Check Bluetooth first
+    if (!_bluetoothOn) {
+      return BluetoothEnableScreen(
+        onBluetoothEnabled: () {
+          setState(() {
+            _bluetoothOn = true;
+          });
+        },
+      );
+    }
+
     if (_isPaired) {
-      // Already paired - go to main app
+      // Already paired - go to main app (with Bluetooth check)
       return const MainNavigator();
     } else {
       // Not paired - show pairing flow
@@ -99,7 +141,7 @@ class _AppInitializerState extends State<AppInitializer> {
   }
 }
 
-/// Navigator for pairing flow
+// Welcome screen then manual pairing
 class PairingNavigator extends StatefulWidget {
   const PairingNavigator({super.key});
 
@@ -108,19 +150,11 @@ class PairingNavigator extends StatefulWidget {
 }
 
 class _PairingNavigatorState extends State<PairingNavigator> {
-  int _currentStep = 0;
-  bool _isAutoMode = true;
+  bool _showWelcome = true;
 
-  void _goToModeSelection() {
+  void _startPairing() {
     setState(() {
-      _currentStep = 1;
-    });
-  }
-
-  void _startPairing(bool isAutoMode) {
-    setState(() {
-      _isAutoMode = isAutoMode;
-      _currentStep = 2;
+      _showWelcome = false;
     });
   }
 
@@ -135,18 +169,14 @@ class _PairingNavigatorState extends State<PairingNavigator> {
 
   @override
   Widget build(BuildContext context) {
-    switch (_currentStep) {
-      case 0:
-        return PairingWelcomeScreen(onContinue: _goToModeSelection);
-      case 1:
-        return PairingModeSelectionScreen(onModeSelected: _startPairing);
-      case 2:
-        return PairingFlowScreen(
-          isAutoMode: _isAutoMode,
-          onComplete: _completePairing,
-        );
-      default:
-        return PairingWelcomeScreen(onContinue: _goToModeSelection);
+    if (_showWelcome) {
+      return PairingWelcomeScreen(onContinue: _startPairing);
+    } else {
+      // Go directly to manual pairing (skip mode selection)
+      return PairingFlowScreen(
+        isAutoMode: false,  // Manual pairing only
+        onComplete: _completePairing,
+      );
     }
   }
 }
@@ -160,6 +190,8 @@ class MainNavigator extends StatefulWidget {
 
 class _MainNavigatorState extends State<MainNavigator> with AutomaticKeepAliveClientMixin {
   String _currentRoute = 'home';
+  bool _bluetoothOn = true;
+  StreamSubscription? _bluetoothSubscription;
   
   // Keep screen alive
   @override
@@ -167,6 +199,28 @@ class _MainNavigatorState extends State<MainNavigator> with AutomaticKeepAliveCl
   
   // PageStorage to preserve scroll positions and state
   final PageStorageBucket _bucket = PageStorageBucket();
+
+  @override
+  void initState() {
+    super.initState();
+    _listenToBluetoothState();
+  }
+
+  @override
+  void dispose() {
+    _bluetoothSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _listenToBluetoothState() {
+    _bluetoothSubscription = FlutterBluePlus.adapterState.listen((state) {
+      if (mounted) {
+        setState(() {
+          _bluetoothOn = state == BluetoothAdapterState.on;
+        });
+      }
+    });
+  }
 
   void _handleNavigation(String route) {
     print('Navigation requested to: $route'); // Debug print
@@ -213,6 +267,17 @@ class _MainNavigatorState extends State<MainNavigator> with AutomaticKeepAliveCl
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
+    
+    // Show Bluetooth enable screen if Bluetooth is turned off
+    if (!_bluetoothOn) {
+      return BluetoothEnableScreen(
+        onBluetoothEnabled: () {
+          setState(() {
+            _bluetoothOn = true;
+          });
+        },
+      );
+    }
     
     return PageStorage(
       bucket: _bucket,

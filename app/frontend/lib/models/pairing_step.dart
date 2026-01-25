@@ -56,7 +56,7 @@ class PairingStep {
       case PairingStepType.bluetoothCheck:
         return 'Checking Bluetooth';
       case PairingStepType.scanning:
-        return 'Scanning for SAGE Glass';
+        return 'Scanning for S.A.G.E';
       case PairingStepType.bluetoothConnect:
         return 'Connecting to Glass';
       case PairingStepType.hotspotDetection:
