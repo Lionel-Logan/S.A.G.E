@@ -757,7 +757,7 @@ class WiFiManager:
         
         try:
             # Use the bash script for reliable network switching
-            script_path = '/home/sage/sage/switch_wifi.sh'
+            script_path = '/home/sage/sage/scripts/switch_wifi.sh'
             
             logger.info(f'Executing WiFi switch script: {script_path}')
             
