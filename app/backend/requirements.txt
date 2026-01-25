@@ -37,3 +37,7 @@ numpy==1.26.3
 # Testing
 pytest==7.4.4
 pytest-asyncio==0.23.3
+
+opencv-python
+httpx
+#it's like requests but async, which FastAPI loves
