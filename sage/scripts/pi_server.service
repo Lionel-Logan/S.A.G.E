@@ -1,0 +1,28 @@
+[Unit]
+Description=SAGE Pi FastAPI Server
+After=network.target
+Documentation=https://github.com/yourusername/sage
+
+[Service]
+Type=simple
+User=sage
+Group=sage
+WorkingDirectory=/home/sage/sage
+Environment="PATH=/home/sage/sage/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/sage/sage/venv/bin/python3 /home/sage/sage/pi_server.py
+
+# Restart policy
+Restart=on-failure
+RestartSec=5s
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sage-pi-server
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
