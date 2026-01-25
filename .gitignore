@@ -85,3 +85,4 @@ docker-compose.override.yml
 # -----------------------------
 Thumbs.db
 .DS_Store
+app/backend/service_account.json
