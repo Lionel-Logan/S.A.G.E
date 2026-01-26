@@ -9,13 +9,14 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 import uvicorn
 
 # Import configuration
 from config import pi_server_config as config
+from utils.bluetooth_manager import BluetoothManager
 
 # Configure logging
 logging.basicConfig(
@@ -57,6 +58,7 @@ app.add_middleware(
 
 # Global variables for service state
 service_start_time = datetime.utcnow()
+bluetooth_manager = BluetoothManager()
 
 
 # ==================== STARTUP/SHUTDOWN EVENTS ====================
@@ -139,9 +141,125 @@ async def health_check():
         "services": {
             "camera": "not_implemented",
             "audio": "not_implemented",
-            "display": "not_implemented"
+            "bluetooth": "ready"
         }
     }
+
+
+# ==================== BLUETOOTH ENDPOINTS ====================
+
+@app.get("/bluetooth/scan")
+async def scan_bluetooth_devices():
+    """
+    Start continuous Bluetooth scan (SSE stream)
+    Scan continues until /bluetooth/scan/stop is called
+        
+    Returns:
+        Server-Sent Events stream of discovered devices
+    """
+    async def event_stream():
+        try:
+            async for device in bluetooth_manager.scan_devices():
+                # Send as SSE event
+                import json
+                data = json.dumps(device)
+                yield f"data: {data}\n\n"
+        except Exception as e:
+            logger.error(f"Scan stream error: {e}")
+            import json
+            error_data = json.dumps({"error": str(e)})
+            yield f"data: {error_data}\n\n"
+    
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
+
+
+@app.post("/bluetooth/scan/stop")
+async def stop_bluetooth_scan():
+    """
+    Stop the current Bluetooth scan
+    
+    Returns:
+        JSON response with success status
+    """
+    success = await bluetooth_manager.stop_scan()
+    return {"success": success}
+
+
+@app.post("/bluetooth/pair")
+async def pair_bluetooth_device(
+    mac: str = Body(..., embed=True),
+    name: str = Body(..., embed=True)
+):
+    """
+    Pair with a Bluetooth audio device (SSE stream)
+    
+    Args:
+        mac: Device MAC address
+        name: Device name
+        
+    Returns:
+        Server-Sent Events stream of pairing progress
+    """
+    async def event_stream():
+        try:
+            async for status in bluetooth_manager.pair_device(mac, name):
+                # Send as SSE event
+                import json
+                data = json.dumps(status)
+                yield f"data: {data}\n\n"
+        except Exception as e:
+            logger.error(f"Pairing stream error: {e}")
+            import json
+            error_data = json.dumps({
+                "status": "failed",
+                "progress": 0,
+                "message": f"Error: {str(e)}",
+                "timestamp": datetime.utcnow().isoformat()
+            })
+            yield f"data: {error_data}\n\n"
+    
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
+
+
+@app.post("/bluetooth/disconnect")
+async def disconnect_bluetooth_device(mac: str = Body(..., embed=True)):
+    """
+    Disconnect and remove a Bluetooth device
+    
+    Args:
+        mac: Device MAC address
+        
+    Returns:
+        JSON response with success status
+    """
+    result = await bluetooth_manager.disconnect_device(mac)
+    return result
+
+
+@app.get("/bluetooth/status")
+async def get_bluetooth_status():
+    """
+    Get current Bluetooth audio device status
+    
+    Returns:
+        JSON response with connected device info
+    """
+    status = await bluetooth_manager.get_status()
+    return status
 
 
 # ==================== MAIN ====================

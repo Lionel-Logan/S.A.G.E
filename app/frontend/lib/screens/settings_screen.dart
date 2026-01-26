@@ -4,10 +4,12 @@ import '../theme/app-theme.dart';
 import '../widgets/sidebar.dart';
 import '../services/storage_service.dart';
 import '../services/bluetooth_service.dart';
+import '../services/bluetooth_audio_service.dart';
 import '../models/paired_device.dart';
 import '../main.dart';
 import 'pairing_flow_screen.dart';
 import 'network_settings_screen.dart';
+import 'bluetooth_audio_settings_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final Function(String) onNavigate;
@@ -228,6 +230,281 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (mounted) {
       await _loadPairingData();
     }
+  }
+
+  void _openBluetoothAudioSettings() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const BluetoothAudioSettingsScreen(),
+      ),
+    );
+  }
+  
+  void _configurePiServer() async {
+    // Auto-discover immediately when dialog opens
+    String? discoveredHost;
+    bool isDiscovering = true;
+    
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          // Auto-discover on first build
+          if (isDiscovering && discoveredHost == null) {
+            BluetoothAudioService.discoverPiServer().then((discovered) {
+              if (context.mounted) {
+                setState(() {
+                  discoveredHost = discovered;
+                  isDiscovering = false;
+                });
+              }
+            });
+          }
+          
+          final controller = TextEditingController(text: discoveredHost ?? '');
+          
+          return AlertDialog(
+            backgroundColor: AppTheme.gray900,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: AppTheme.cyan.withOpacity(0.3)),
+            ),
+            title: Row(
+              children: [
+                Icon(Icons.dns_rounded, color: AppTheme.cyan),
+                const SizedBox(width: 12),
+                Text(
+                  'Configure Pi Server',
+                  style: TextStyle(color: AppTheme.white),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (isDiscovering) ...[
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppTheme.cyan.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.cyan.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation(AppTheme.cyan),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Auto-discovering Pi server...',
+                            style: TextStyle(color: AppTheme.white),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ] else ...[
+                  if (discoveredHost != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.green.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.check_circle, color: Colors.green, size: 24),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Pi Server Found!',
+                                  style: TextStyle(
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  discoveredHost!,
+                                  style: TextStyle(
+                                    color: Colors.green.shade300,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ] else ...[
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.warning, color: Colors.orange, size: 24),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'No Pi server found automatically',
+                              style: TextStyle(color: Colors.orange),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                ],
+                Text(
+                  'Enter the IP address or hostname of your Raspberry Pi:',
+                  style: TextStyle(fontSize: 14, color: AppTheme.gray500),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: controller,
+                  style: TextStyle(color: AppTheme.white),
+                  decoration: InputDecoration(
+                    labelText: 'Host',
+                    labelStyle: TextStyle(color: AppTheme.gray500),
+                    hintText: 'sage-pi.local or 192.168.1.110',
+                    hintStyle: TextStyle(color: AppTheme.gray500),
+                    border: OutlineInputBorder(
+                      borderSide: BorderSide(color: AppTheme.gray700),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: AppTheme.gray700),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: AppTheme.cyan, width: 2),
+                    ),
+                  ),
+                  enabled: !isDiscovering,
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: isDiscovering ? null : () async {
+                      setState(() => isDiscovering = true);
+                      final discovered = await BluetoothAudioService.discoverPiServer();
+                      setState(() {
+                        discoveredHost = discovered;
+                        isDiscovering = false;
+                      });
+                      
+                      if (discovered != null) {
+                        controller.text = discovered;
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Found Pi at: $discovered'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+                      } else {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('No Pi server found on network'),
+                              backgroundColor: Colors.orange,
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    icon: isDiscovering 
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(Icons.search, color: AppTheme.cyan),
+                    label: Text(
+                      isDiscovering ? 'Discovering...' : 'Re-Discover',
+                      style: TextStyle(
+                        color: AppTheme.cyan,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      side: BorderSide(color: AppTheme.cyan, width: 2),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () async {
+                  await BluetoothAudioService.resetPiServerHost();
+                  Navigator.pop(context);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: const Text('Reset to default (sage-pi.local)'),
+                        backgroundColor: AppTheme.purple,
+                      ),
+                    );
+                  }
+                },
+                child: Text('Reset', style: TextStyle(color: AppTheme.gray500)),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Cancel', style: TextStyle(color: AppTheme.gray500)),
+              ),
+              ElevatedButton(
+                onPressed: isDiscovering ? null : () async {
+                  final host = controller.text.trim();
+                  if (host.isNotEmpty) {
+                    await BluetoothAudioService.setPiServerHost(host);
+                    Navigator.pop(context);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Pi server set to: $host'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.cyan,
+                  foregroundColor: AppTheme.black,
+                ),
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   void _showNetworkDetails() {
@@ -675,13 +952,34 @@ class _SettingsScreenState extends State<SettingsScreen>
           
           // CONNECTIVITY Section
           _buildSectionHeader('CONNECTIVITY', 'Network and connection management'),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _buildActionButton(
             'Network Settings',
             'Configure WiFi connection for S.A.G.E',
             Icons.wifi_rounded,
             AppTheme.cyan,
             _openNetworkSettings,
+          ),
+          const SizedBox(height: 16),
+          _buildActionButton(
+            'Bluetooth Audio',
+            'Pair and manage Bluetooth audio devices',
+            Icons.headphones_rounded,
+            AppTheme.purple,
+            _openBluetoothAudioSettings,
+          ),
+          
+          const SizedBox(height: 40),
+          
+          // MANAGE S.A.G.E Section
+          _buildSectionHeader('MANAGE S.A.G.E', 'System configuration and settings'),
+          const SizedBox(height: 12),
+          _buildActionButton(
+            'Pi Server Address',
+            'Configure Raspberry Pi IP address or hostname',
+            Icons.dns_rounded,
+            AppTheme.cyan,
+            _configurePiServer,
           ),
           
           const SizedBox(height: 40),

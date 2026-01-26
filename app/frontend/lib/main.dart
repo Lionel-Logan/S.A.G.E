@@ -9,9 +9,13 @@ import 'screens/pairing_welcome_screen.dart';
 import 'screens/pairing_flow_screen.dart';
 import 'screens/bluetooth_enable_screen.dart';
 import 'services/storage_service.dart';
+import 'services/bluetooth_audio_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Start network monitoring for Pi auto-discovery
+  BluetoothAudioService.startNetworkMonitoring();
   
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(

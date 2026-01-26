@@ -44,6 +44,7 @@ dependencies:
   flutter_blue_plus: ^1.31.11  # Bluetooth connectivity
   wifi_iot: ^0.3.19  # WiFi hotspot management
   network_info_plus: ^5.0.1  # Network information
+  connectivity_plus: ^6.0.5  # Network connectivity monitoring
 
 dev_dependencies:
   flutter_test:
