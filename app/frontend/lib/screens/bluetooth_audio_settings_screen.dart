@@ -343,7 +343,7 @@ class _BluetoothAudioSettingsScreenState extends State<BluetoothAudioSettingsScr
               ),
               Expanded(
                 child: Text(
-                  'BLUETOOTH AUDIO',
+                  'AUDIO DEVICES',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,

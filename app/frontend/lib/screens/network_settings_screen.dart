@@ -373,7 +373,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(
-          'Network Settings',
+          'WiFi',
           style: TextStyle(color: AppTheme.white),
         ),
       ),

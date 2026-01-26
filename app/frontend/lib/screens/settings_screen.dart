@@ -45,6 +45,10 @@ class _SettingsScreenState extends State<SettingsScreen>
   Map<String, dynamic>? _bluetoothDetails;
   Map<String, dynamic>? _deviceInfo;
   
+  // Bluetooth Audio status
+  String? _bluetoothAudioDeviceName;
+  bool _bluetoothAudioConnected = false;
+  
   late AnimationController _animController;
   late Animation<double> _fadeAnimation;
 
@@ -94,6 +98,19 @@ class _SettingsScreenState extends State<SettingsScreen>
         BluetoothService.readBluetoothDetails(_pairedDevice!.id),
         BluetoothService.readDeviceInfo(_pairedDevice!.id),
       ]);
+      
+      // Also fetch Bluetooth audio status
+      try {
+        final audioStatus = await BluetoothAudioService.getStatus();
+        if (mounted) {
+          setState(() {
+            _bluetoothAudioConnected = audioStatus['connected'] as bool? ?? false;
+            _bluetoothAudioDeviceName = audioStatus['device_name'] as String?;
+          });
+        }
+      } catch (e) {
+        // Bluetooth audio status failed, just keep defaults
+      }
       
       if (mounted) {
         setState(() {
@@ -274,7 +291,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 Icon(Icons.dns_rounded, color: AppTheme.cyan),
                 const SizedBox(width: 12),
                 Text(
-                  'Configure Pi Server',
+                  'Configure S.A.G.E Server',
                   style: TextStyle(color: AppTheme.white),
                 ),
               ],
@@ -304,7 +321,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Auto-discovering Pi server...',
+                            'Auto-discovering S.A.G.E server...',
                             style: TextStyle(color: AppTheme.white),
                           ),
                         ),
@@ -330,7 +347,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Pi Server Found!',
+                                  'S.A.G.E Server Found!',
                                   style: TextStyle(
                                     color: Colors.green,
                                     fontWeight: FontWeight.bold,
@@ -365,7 +382,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'No Pi server found automatically',
+                              'No S.A.G.E server found automatically',
                               style: TextStyle(color: Colors.orange),
                             ),
                           ),
@@ -376,7 +393,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ],
                 ],
                 Text(
-                  'Enter the IP address or hostname of your Raspberry Pi:',
+                  'Enter the IP address or hostname of your S.A.G.E server:',
                   style: TextStyle(fontSize: 14, color: AppTheme.gray500),
                 ),
                 const SizedBox(height: 16),
@@ -417,7 +434,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text('Found Pi at: $discovered'),
+                              content: Text('Found S.A.G.E server at: $discovered'),
                               backgroundColor: Colors.green,
                             ),
                           );
@@ -426,7 +443,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('No Pi server found on network'),
+                              content: Text('No S.A.G.E server found on network'),
                               backgroundColor: Colors.orange,
                             ),
                           );
@@ -487,7 +504,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Pi server set to: $host'),
+                          content: Text('S.A.G.E server set to: $host'),
                           backgroundColor: Colors.green,
                         ),
                       );
@@ -954,7 +971,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           _buildSectionHeader('CONNECTIVITY', 'Network and connection management'),
           const SizedBox(height: 12),
           _buildActionButton(
-            'Network Settings',
+            'Wi-Fi Settings',
             'Configure WiFi connection for S.A.G.E',
             Icons.wifi_rounded,
             AppTheme.cyan,
@@ -962,7 +979,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           const SizedBox(height: 16),
           _buildActionButton(
-            'Bluetooth Audio',
+            'Audio Settings',
             'Pair and manage Bluetooth audio devices',
             Icons.headphones_rounded,
             AppTheme.purple,
@@ -971,12 +988,14 @@ class _SettingsScreenState extends State<SettingsScreen>
           
           const SizedBox(height: 40),
           
-          // MANAGE S.A.G.E Section
-          _buildSectionHeader('MANAGE S.A.G.E', 'System configuration and settings'),
+          // MANAGE SERVICES Section
+          _buildSectionHeader('MANAGE SERVICES', 'Configure AI and processing services'),
           const SizedBox(height: 12),
+          _buildSpeechToTextConfig(),
+          const SizedBox(height: 16),
           _buildActionButton(
-            'Pi Server Address',
-            'Configure Raspberry Pi IP address or hostname',
+            'Server IP Settings',
+            'Configure S.A.G.E IP address for server connectivity',
             Icons.dns_rounded,
             AppTheme.cyan,
             _configurePiServer,
@@ -1203,11 +1222,13 @@ class _SettingsScreenState extends State<SettingsScreen>
             children: [
               Expanded(
                 child: _buildStatusItem(
-                  Icons.signal_cellular_alt_rounded,
-                  'WiFi Signal',
-                  _currentNetwork != null ? 'Good' : 'No signal',
-                  _currentNetwork != null ? AppTheme.green : AppTheme.gray500,
-                  onTap: () => _showWiFiSignalDetails(),
+                  Icons.headphones_rounded,
+                  'Audio Device',
+                  _bluetoothAudioConnected 
+                    ? (_bluetoothAudioDeviceName ?? 'Connected')
+                    : 'Not Connected',
+                  _bluetoothAudioConnected ? AppTheme.green : AppTheme.gray500,
+                  onTap: () => _showBluetoothAudioStatus(),
                 ),
               ),
               const SizedBox(width: 16),
@@ -1558,6 +1579,541 @@ class _SettingsScreenState extends State<SettingsScreen>
             fontSize: 14,
             color: AppTheme.white,
             fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Speech to Text Configuration Widget
+  String _selectedSTTEngine = 'Vosk'; // Default to Vosk
+  bool _showGoogleApiKeyInput = false;
+  bool _showSTTEngineOptions = false; // Toggle for dropdown
+  final TextEditingController _googleApiKeyController = TextEditingController();
+
+  Widget _buildSpeechToTextConfig() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppTheme.gray900,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.gray800),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header with current selection
+          GestureDetector(
+            onTap: () {
+              setState(() {
+                _showSTTEngineOptions = !_showSTTEngineOptions;
+                // If closing dropdown, also close API key input
+                if (!_showSTTEngineOptions) {
+                  _showGoogleApiKeyInput = false;
+                }
+              });
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.cyan.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(Icons.record_voice_over, color: AppTheme.cyan, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Speech-To-Text Settings',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.white,
+                          ),
+                        ),
+                        Text(
+                          _selectedSTTEngine == 'Vosk' ? 'Vosk' : 'Google',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.cyan,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: (_showSTTEngineOptions || _showGoogleApiKeyInput) ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    child: Icon(
+                      Icons.expand_more,
+                      color: AppTheme.gray500,
+                      size: 24,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          
+          // Expandable Engine Selection Cards with smooth animation
+          AnimatedSize(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            child: (_showSTTEngineOptions || _showGoogleApiKeyInput) 
+              ? Column(
+                  children: [
+                    const SizedBox(height: 20),
+                    GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _selectedSTTEngine = 'Vosk';
+                          _showGoogleApiKeyInput = false;
+                          // Keep dropdown open
+                        });
+                      },
+                      child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _selectedSTTEngine == 'Vosk' 
+                      ? AppTheme.cyan.withOpacity(0.1)
+                      : AppTheme.black,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _selectedSTTEngine == 'Vosk'
+                        ? AppTheme.cyan
+                        : AppTheme.gray800,
+                    width: 2,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: _selectedSTTEngine == 'Vosk'
+                            ? AppTheme.cyan.withOpacity(0.2)
+                            : AppTheme.gray900,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Image.asset(
+                        'assets/images/vosk_logo.png',
+                        width: 24,
+                        height: 24,
+                        color: _selectedSTTEngine == 'Vosk'
+                            ? null
+                            : AppTheme.gray500,
+                        colorBlendMode: _selectedSTTEngine == 'Vosk'
+                            ? BlendMode.dst
+                            : BlendMode.srcIn,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Vosk',
+                            style: TextStyle(
+                              color: AppTheme.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Local • Offline • Slower',
+                            style: TextStyle(
+                              color: AppTheme.gray500,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_selectedSTTEngine == 'Vosk')
+                      Icon(
+                        Icons.check_circle,
+                        color: AppTheme.cyan,
+                        size: 24,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _selectedSTTEngine = 'Google';
+                  _showGoogleApiKeyInput = true;
+                  // Keep dropdown open to show API key input
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _selectedSTTEngine == 'Google'
+                      ? AppTheme.cyan.withOpacity(0.1)
+                      : AppTheme.black,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _selectedSTTEngine == 'Google'
+                        ? AppTheme.cyan
+                        : AppTheme.gray800,
+                    width: 2,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: _selectedSTTEngine == 'Google'
+                            ? AppTheme.cyan.withOpacity(0.2)
+                            : AppTheme.gray900,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Image.asset(
+                        'assets/images/google_logo.png',
+                        width: 24,
+                        height: 24,
+                        color: _selectedSTTEngine == 'Google'
+                            ? null
+                            : AppTheme.gray500,
+                        colorBlendMode: _selectedSTTEngine == 'Google'
+                            ? BlendMode.dst
+                            : BlendMode.srcIn,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Google',
+                            style: TextStyle(
+                              color: AppTheme.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Cloud • Online • Faster',
+                            style: TextStyle(
+                              color: AppTheme.gray500,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_selectedSTTEngine == 'Google')
+                      Icon(
+                        Icons.check_circle,
+                        color: AppTheme.cyan,
+                        size: 24,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            
+            // Google API Key Input (expandable)
+            if (_showGoogleApiKeyInput) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppTheme.cyan.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppTheme.cyan.withOpacity(0.3)),
+                ),
+                child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Google Cloud API Key',
+                    style: TextStyle(
+                      color: AppTheme.cyan,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _googleApiKeyController,
+                    style: TextStyle(color: AppTheme.white),
+                    decoration: InputDecoration(
+                      hintText: 'Enter your API key',
+                      hintStyle: TextStyle(color: AppTheme.gray500),
+                      filled: true,
+                      fillColor: AppTheme.gray900,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: AppTheme.gray800),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: AppTheme.gray800),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: AppTheme.cyan),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.gray900,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.info_outline, size: 16, color: AppTheme.gray500),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Setup Instructions',
+                              style: TextStyle(
+                                color: AppTheme.gray500,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '1. Go to Google Cloud Console\n'
+                          '2. Enable Speech-to-Text API\n'
+                          '3. Create credentials (API Key)\n'
+                          '4. Copy and paste the key above',
+                          style: TextStyle(
+                            color: AppTheme.gray500,
+                            fontSize: 11,
+                            height: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        // TODO: Save API key to backend
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('API key saved (placeholder)'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.cyan,
+                        foregroundColor: AppTheme.black,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: Text(
+                        'Save API Key',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                ],
+                ),
+              ),
+            ],
+                  ],
+                )
+              : const SizedBox.shrink(),
+          ),
+        ], // Closing children of main Column
+      ), // Closing Column
+    ); // Closing Container
+  }
+
+  // Bluetooth Audio Status Dialog
+  void _showBluetoothAudioStatus() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.gray900,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: AppTheme.purple.withOpacity(0.3)),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.headphones_rounded, color: AppTheme.purple),
+            const SizedBox(width: 12),
+            Text(
+              'Audio Device',
+              style: TextStyle(color: AppTheme.white),
+            ),
+          ],
+        ),
+        content: FutureBuilder<Map<String, dynamic>>(
+          future: BluetoothAudioService.getStatus(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation(AppTheme.purple),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Checking Bluetooth status...',
+                    style: TextStyle(color: AppTheme.gray500),
+                  ),
+                ],
+              );
+            }
+            
+            if (snapshot.hasError) {
+              return Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.red.withOpacity(0.3)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.error_outline, color: Colors.red, size: 32),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Failed to get status',
+                      style: TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      snapshot.error.toString(),
+                      style: TextStyle(color: AppTheme.gray500, fontSize: 12),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              );
+            }
+            
+            final status = snapshot.data!;
+            final isConnected = status['connected'] as bool? ?? false;
+            final deviceName = status['device_name'] as String?;
+            final deviceAddress = status['device_address'] as String?;
+            
+            return Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppTheme.gray900,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.gray800),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        isConnected ? Icons.check_circle : Icons.cancel,
+                        color: isConnected ? Colors.green : AppTheme.gray500,
+                        size: 24,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          isConnected ? 'Connected' : 'Not Connected',
+                          style: TextStyle(
+                            color: isConnected ? Colors.green : AppTheme.gray500,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (isConnected && deviceName != null) ...[
+                    const Divider(color: AppTheme.gray800, height: 24),
+                    _buildInfoRowInDialog('Device Name', deviceName),
+                    if (deviceAddress != null) ...[
+                      const SizedBox(height: 12),
+                      _buildInfoRowInDialog('Address', deviceAddress),
+                    ],
+                  ],
+                  if (!isConnected) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      'No Bluetooth audio device is currently connected',
+                      style: TextStyle(
+                        color: AppTheme.gray500,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Close', style: TextStyle(color: AppTheme.purple)),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildInfoRowInDialog(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            color: AppTheme.gray500,
+          ),
+        ),
+        Flexible(
+          child: Text(
+            value,
+            style: TextStyle(
+              fontSize: 13,
+              color: AppTheme.white,
+              fontWeight: FontWeight.bold,
+            ),
+            textAlign: TextAlign.end,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],
