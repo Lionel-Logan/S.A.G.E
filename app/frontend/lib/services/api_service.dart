@@ -4,9 +4,9 @@ import 'package:http/http.dart' as http;
 /// API Service for communicating with Pi Server and App Backend
 class ApiService {
   // Server URLs - Change these based on your environment
-  // Using PC's IP address for physical Android device
-  static const String piServerUrl = 'http://192.168.122.153:8001';
-  static const String backendUrl = 'http://192.168.122.153:8002';
+  // Using sage-pi.local for Raspberry Pi
+  static const String piServerUrl = 'http://sage-pi.local:8001';
+  static const String backendUrl = 'http://sage-pi.local:8002';
   
   // Timeout duration - increased for network requests
   static const Duration timeout = Duration(seconds: 30);

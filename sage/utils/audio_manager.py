@@ -9,6 +9,7 @@ import wave
 import numpy as np
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Optional, Tuple
 from datetime import datetime
@@ -20,6 +21,11 @@ logger = logging.getLogger(__name__)
 
 class AudioManager:
     """Manages audio input/output operations"""
+    
+    # Class-level lock for audio resource coordination
+    # Ensures TTS and microphone don't conflict
+    _audio_lock = threading.Lock()
+    _tts_active = False
     
     def __init__(self):
         """Initialize PyAudio and configure audio settings"""
@@ -263,6 +269,49 @@ class AudioManager:
         except Exception as e:
             logger.error(f"Error saving debug recording: {e}")
             return None
+    
+    @classmethod
+    def acquire_for_tts(cls, timeout: float = 5.0) -> bool:
+        """
+        Acquire audio lock for TTS playback
+        
+        Args:
+            timeout: Maximum seconds to wait for lock
+            
+        Returns:
+            True if lock acquired, False if timeout
+        """
+        acquired = cls._audio_lock.acquire(timeout=timeout)
+        if acquired:
+            cls._tts_active = True
+            logger.debug("Audio lock acquired for TTS")
+        else:
+            logger.warning("Failed to acquire audio lock for TTS")
+        return acquired
+    
+    @classmethod
+    def release_from_tts(cls):
+        """Release audio lock after TTS playback"""
+        try:
+            cls._tts_active = False
+            cls._audio_lock.release()
+            logger.debug("Audio lock released from TTS")
+        except RuntimeError:
+            # Lock was not held
+            pass
+    
+    @classmethod
+    def is_tts_active(cls) -> bool:
+        """Check if TTS is currently active"""
+        return cls._tts_active
+    
+    @classmethod
+    def interrupt_tts(cls):
+        """Request TTS interruption (used when wake word detected)"""
+        if cls._tts_active:
+            logger.info("TTS interruption requested")
+            cls._tts_active = False
+            # The TTS service will check this flag and stop
     
     def cleanup(self):
         """Clean up audio resources"""

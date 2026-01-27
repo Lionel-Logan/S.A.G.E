@@ -117,6 +117,14 @@ class VoiceAssistant:
         self.update_status("wake_word_detected")
         
         try:
+            # Step 0: Interrupt TTS if it's currently speaking
+            from utils.audio_manager import AudioManager
+            if AudioManager.is_tts_active():
+                logger.info("⚠️ Wake word detected during TTS, stopping TTS immediately")
+                AudioManager.interrupt_tts()
+                # Give TTS a moment to stop
+                time.sleep(0.3)
+            
             # Step 1: Play wake tone
             if config.ENABLE_WAKE_TONE:
                 logger.info("Playing wake tone...")

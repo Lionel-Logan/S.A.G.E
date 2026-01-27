@@ -1,0 +1,15 @@
+[Unit]
+Description=Auto-connect JBL Bluetooth Headset
+After=bluetooth.target
+Wants=bluetooth.target
+
+[Service]
+Type=oneshot
+User=sage
+Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus"
+ExecStartPre=/bin/sleep 5
+ExecStart=/home/sage/sage/scripts/auto_connect_bluetooth.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

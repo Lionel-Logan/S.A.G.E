@@ -565,8 +565,24 @@ class BluetoothManager:
             # Convert MAC to sink format: XX_XX_XX_XX_XX_XX
             sink_mac = mac.replace(':', '_')
             
+            # Step 1: Switch to A2DP profile for high-quality audio
+            logger.info(f"Switching Bluetooth card to A2DP profile for audio playback...")
+            card_name = f"bluez_card.{sink_mac}"
+            
+            profile_proc = await asyncio.create_subprocess_exec(
+                'pactl', 'set-card-profile', card_name, 'a2dp-sink',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            _, profile_stderr = await profile_proc.communicate()
+            
+            if profile_proc.returncode == 0:
+                logger.info(f"Successfully set {card_name} to A2DP profile")
+            else:
+                logger.warning(f"Could not set A2DP profile: {profile_stderr.decode()}")
+            
             # Wait for A2DP profile to initialize
-            logger.info(f"Waiting for A2DP profile to initialize...")
+            logger.info(f"Waiting for A2DP audio sink to initialize...")
             await asyncio.sleep(3)
             
             # Get list of available sinks

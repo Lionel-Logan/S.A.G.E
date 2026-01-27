@@ -13,8 +13,8 @@ class AppTheme {
   // Accent Colors - Cyan-based harmonious palette
   static const Color cyan = Color(0xFF00D9FF);        // Primary cyan
   static const Color purple = Color(0xFFB24BF3);      // Soft purple (complements cyan)
-  static const Color pink = Color(0xFFFF6BCB);        // Soft pink (harmonious)
   static const Color blue = Color(0xFF4D9FFF);        // Light blue (analogous)
+  static const Color pink = Color(0xFFFF6BCB);        // Soft pink (harmonious)
   
   // Legacy aliases for backward compatibility
   static const Color yellow = pink;
