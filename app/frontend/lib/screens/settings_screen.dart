@@ -14,6 +14,8 @@ import '../main.dart';
 import 'pairing_flow_screen.dart';
 import 'network_settings_screen.dart';
 import 'bluetooth_audio_settings_screen.dart';
+import 'object_detection_settings_screen.dart';
+import 'camera_settings_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final Function(String) onNavigate;
@@ -59,6 +61,9 @@ class _SettingsScreenState extends State<SettingsScreen>
   @override
   void initState() {
     super.initState();
+    
+    // Clear cached Pi server URL to trigger fresh discovery
+    BluetoothAudioService.clearCache();
     
     _animController = AnimationController(
       vsync: this,
@@ -151,13 +156,8 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Future<void> _initializeTTSService() async {
     try {
-      // Initialize TTS service with device URL from SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      String? host = prefs.getString('pi_server_host');
-      if (host == null || host.isEmpty) {
-        host = 'sage-pi.local';
-      }
-      final baseUrl = 'http://$host:8001';
+      // Initialize TTS service with device URL from BluetoothAudioService
+      final baseUrl = await BluetoothAudioService.getPiServerUrl();
       TTSService.setBaseUrl(baseUrl);
       
       // Wait a bit for device to be available, then load config
@@ -170,13 +170,8 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Future<void> _initializeSTTService() async {
     try {
-      // Initialize STT service with device URL from SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      String? host = prefs.getString('pi_server_host');
-      if (host == null || host.isEmpty) {
-        host = 'sage-pi.local';
-      }
-      final baseUrl = 'http://$host:8001';
+      // Initialize STT service with device URL from BluetoothAudioService
+      final baseUrl = await BluetoothAudioService.getPiServerUrl();
       STTService.setBaseUrl(baseUrl);
     } catch (e) {
       print('Failed to initialize STT service: $e');
@@ -1175,12 +1170,29 @@ class _SettingsScreenState extends State<SettingsScreen>
           
           const SizedBox(height: 40),
           
-          // MANAGE SERVICES Section
-          _buildSectionHeader('MANAGE SERVICES', 'Configure AI and processing services'),
+          // DEVICE Section
+          _buildSectionHeader('DEVICE', 'Hardware configuration'),
+          const SizedBox(height: 16),
+          _buildActionButton(
+            'Camera Settings',
+            'Configure Pi Camera capture and recording',
+            Icons.camera_outlined,
+            AppTheme.cyan,
+            () {
+              widget.onNavigate('camera_settings');
+            },
+          ),
+          
+          const SizedBox(height: 40),
+          
+          // SERVICES Section
+          _buildSectionHeader('SERVICES', 'Configure AI and processing services'),
           const SizedBox(height: 12),
           _buildSpeechToTextConfig(),
           const SizedBox(height: 16),
           _buildTextToSpeechConfig(),
+          const SizedBox(height: 16),
+          _buildMachineLearningConfig(),
           const SizedBox(height: 16),
           _buildActionButton(
             'Server IP Settings',
@@ -1790,6 +1802,9 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _isTestingVoice = false;
   TTSConfig? _currentTTSConfig;
   final TextEditingController _googleTTSApiKeyController = TextEditingController();
+  
+  // Machine Learning Configuration
+  bool _showMLOptions = false; // Toggle for ML dropdown
 
   Widget _buildSpeechToTextConfig() {
     return Container(
@@ -2955,6 +2970,240 @@ class _SettingsScreenState extends State<SettingsScreen>
                             : const SizedBox.shrink(),
                       ),
                       ], // End of On-device conditional
+                    ],
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  // Machine Learning Configuration Widget
+  Widget _buildMachineLearningConfig() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppTheme.gray900,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: _showMLOptions ? AppTheme.cyan : AppTheme.gray800,
+          width: 2,
+        ),
+        boxShadow: _showMLOptions
+            ? [
+                BoxShadow(
+                  color: AppTheme.cyan.withOpacity(0.2),
+                  blurRadius: 20,
+                  spreadRadius: 0,
+                )
+              ]
+            : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onTap: () {
+              setState(() {
+                _showMLOptions = !_showMLOptions;
+              });
+            },
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppTheme.cyan.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.smart_toy_outlined,
+                    color: AppTheme.cyan,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Machine Learning Settings',
+                        style: TextStyle(
+                          color: AppTheme.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Configure AI models and detection',
+                        style: TextStyle(
+                          color: AppTheme.gray500,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                AnimatedRotation(
+                  turns: _showMLOptions ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Icon(
+                    Icons.expand_more,
+                    color: AppTheme.cyan,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Expandable content with animation
+          AnimatedSize(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            child: _showMLOptions
+                ? Column(
+                    children: [
+                      const SizedBox(height: 20),
+                      
+                      // Object Detection Option
+                      InkWell(
+                        onTap: () {
+                          widget.onNavigate('object_detection_settings');
+                        },
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.black,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppTheme.cyan.withOpacity(0.3),
+                              width: 2,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.cyan.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(
+                                  Icons.search_outlined,
+                                  color: AppTheme.cyan,
+                                  size: 24,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Object Detection',
+                                      style: TextStyle(
+                                        color: AppTheme.white,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Configure detection settings',
+                                      style: TextStyle(
+                                        color: AppTheme.gray500,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(
+                                Icons.arrow_forward_ios,
+                                color: AppTheme.gray500,
+                                size: 16,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 12),
+                      
+                      // Facial Recognition Option
+                      InkWell(
+                        onTap: () {
+                          // TODO: Navigate to facial recognition settings
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Facial Recognition - Coming Soon'),
+                              backgroundColor: AppTheme.cyan,
+                            ),
+                          );
+                        },
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.black,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppTheme.purple.withOpacity(0.3),
+                              width: 2,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.purple.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(
+                                  Icons.face_outlined,
+                                  color: AppTheme.purple,
+                                  size: 24,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Facial Recognition',
+                                      style: TextStyle(
+                                        color: AppTheme.white,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Configure face detection settings',
+                                      style: TextStyle(
+                                        color: AppTheme.gray500,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(
+                                Icons.arrow_forward_ios,
+                                color: AppTheme.gray500,
+                                size: 16,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ],
                   )
                 : const SizedBox.shrink(),

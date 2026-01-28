@@ -172,7 +172,7 @@ class BluetoothAudioService {
   }
 
   /// Get the configured Pi server URL (with auto-discovery)
-  static Future<String> _getPiServerUrl() async {
+  static Future<String> getPiServerUrl() async {
     // Use cached URL if recent (within 5 minutes)
     if (_cachedPiServerUrl != null && _cacheTimestamp != null) {
       final age = DateTime.now().difference(_cacheTimestamp!);
@@ -205,7 +205,7 @@ class BluetoothAudioService {
   /// Check if Pi server is reachable
   static Future<bool> isPiServerReachable() async {
     try {
-      final piServerUrl = await _getPiServerUrl();
+      final piServerUrl = await getPiServerUrl();
       final response = await http.get(
         Uri.parse('$piServerUrl/ping'),
       ).timeout(const Duration(seconds: 3));
@@ -252,7 +252,7 @@ class BluetoothAudioService {
     }
     
     try {
-      final piServerUrl = await _getPiServerUrl();
+      final piServerUrl = await getPiServerUrl();
       final url = Uri.parse('$piServerUrl/bluetooth/scan');
       final request = http.Request('GET', url);
 
@@ -293,7 +293,7 @@ class BluetoothAudioService {
   /// Stop the current Bluetooth scan
   static Future<bool> stopScan() async {
     try {
-      final piServerUrl = await _getPiServerUrl();
+      final piServerUrl = await getPiServerUrl();
       final response = await http.post(
         Uri.parse('$piServerUrl/bluetooth/scan/stop'),
       ).timeout(const Duration(seconds: 5));
@@ -339,7 +339,7 @@ class BluetoothAudioService {
     }
     
     try {
-      final piServerUrl = await _getPiServerUrl();
+      final piServerUrl = await getPiServerUrl();
       final url = Uri.parse('$piServerUrl/bluetooth/pair');
       final client = http.Client();
 
@@ -389,7 +389,7 @@ class BluetoothAudioService {
   /// Disconnect a Bluetooth device
   static Future<Map<String, dynamic>> disconnectDevice(String mac) async {
     try {
-      final piServerUrl = await _getPiServerUrl();
+      final piServerUrl = await getPiServerUrl();
       final response = await http.post(
         Uri.parse('$piServerUrl/bluetooth/disconnect'),
         headers: {'Content-Type': 'application/json'},
@@ -409,7 +409,7 @@ class BluetoothAudioService {
   /// Get current Bluetooth status
   static Future<Map<String, dynamic>> getStatus() async {
     try {
-      final piServerUrl = await _getPiServerUrl();
+      final piServerUrl = await getPiServerUrl();
       final response = await http.get(
         Uri.parse('$piServerUrl/bluetooth/status'),
       ).timeout(const Duration(seconds: 10));

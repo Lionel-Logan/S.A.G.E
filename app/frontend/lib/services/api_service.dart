@@ -1,12 +1,19 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'bluetooth_audio_service.dart';
 
 /// API Service for communicating with Pi Server and App Backend
 class ApiService {
-  // Server URLs - Change these based on your environment
-  // Using sage-pi.local for Raspberry Pi
-  static const String piServerUrl = 'http://sage-pi.local:8001';
-  static const String backendUrl = 'http://sage-pi.local:8002';
+  // Server URLs - dynamically resolved from settings
+  static Future<String> getPiServerUrl() async {
+    return await BluetoothAudioService.getPiServerUrl();
+  }
+  
+  static Future<String> getBackendUrl() async {
+    final piUrl = await getPiServerUrl();
+    // Backend runs on port 8002 on same host as Pi server
+    return piUrl.replaceAll(':8001', ':8002');
+  }
   
   // Timeout duration - increased for network requests
   static const Duration timeout = Duration(seconds: 30);
@@ -18,6 +25,7 @@ class ApiService {
   /// Get device identity and pairing status
   static Future<Map<String, dynamic>> getIdentity() async {
     try {
+      final piServerUrl = await getPiServerUrl();
       final response = await http.get(
         Uri.parse('$piServerUrl/identity'),
       ).timeout(timeout);
@@ -38,6 +46,7 @@ class ApiService {
     required String appName,
   }) async {
     try {
+      final piServerUrl = await getPiServerUrl();
       final response = await http.post(
         Uri.parse('$piServerUrl/pairing/request'),
         headers: {'Content-Type': 'application/json'},
@@ -64,6 +73,7 @@ class ApiService {
     required bool confirm,
   }) async {
     try {
+      final piServerUrl = await getPiServerUrl();
       final response = await http.post(
         Uri.parse('$piServerUrl/pairing/confirm'),
         headers: {'Content-Type': 'application/json'},
@@ -86,6 +96,7 @@ class ApiService {
   /// Capture camera frame from Pi
   static Future<Map<String, dynamic>> captureCamera() async {
     try {
+      final piServerUrl = await getPiServerUrl();
       final response = await http.get(
         Uri.parse('$piServerUrl/camera/capture'),
       ).timeout(timeout);
@@ -107,6 +118,7 @@ class ApiService {
     int durationMs = 3000,
   }) async {
     try {
+      final piServerUrl = await getPiServerUrl();
       final response = await http.post(
         Uri.parse('$piServerUrl/hud/display'),
         headers: {'Content-Type': 'application/json'},
@@ -130,6 +142,7 @@ class ApiService {
   /// Speak text through Pi speaker
   static Future<Map<String, dynamic>> speak(String text) async {
     try {
+      final piServerUrl = await getPiServerUrl();
       final response = await http.post(
         Uri.parse('$piServerUrl/speaker/speak'),
         headers: {'Content-Type': 'application/json'},
@@ -153,6 +166,7 @@ class ApiService {
   /// Voice assistant query
   static Future<Map<String, dynamic>> voiceAssistantQuery(String query) async {
     try {
+      final backendUrl = await getBackendUrl();
       final response = await http.post(
         Uri.parse('$backendUrl/assistant/query'),
         headers: {'Content-Type': 'application/json'},
@@ -175,6 +189,7 @@ class ApiService {
     double threshold = 0.6,
   }) async {
     try {
+      final backendUrl = await getBackendUrl();
       final response = await http.post(
         Uri.parse('$backendUrl/recognition/faces'),
         headers: {'Content-Type': 'application/json'},
@@ -200,6 +215,7 @@ class ApiService {
     double threshold = 0.5,
   }) async {
     try {
+      final backendUrl = await getBackendUrl();
       final response = await http.post(
         Uri.parse('$backendUrl/detection/objects'),
         headers: {'Content-Type': 'application/json'},
@@ -225,6 +241,7 @@ class ApiService {
     String targetLanguage = 'en',
   }) async {
     try {
+      final backendUrl = await getBackendUrl();
       final response = await http.post(
         Uri.parse('$backendUrl/workflow/translate-image'),
         headers: {'Content-Type': 'application/json'},
@@ -247,6 +264,7 @@ class ApiService {
   /// Health check for backend
   static Future<bool> checkBackendHealth() async {
     try {
+      final backendUrl = await getBackendUrl();
       final response = await http.get(
         Uri.parse('$backendUrl/health'),
       ).timeout(const Duration(seconds: 2));
@@ -254,6 +272,25 @@ class ApiService {
       return response.statusCode == 200;
     } catch (e) {
       return false;
+    }
+  }
+  
+  /// Reset camera configuration to defaults
+  static Future<Map<String, dynamic>> resetCameraSettings() async {
+    try {
+      final piUrl = await getPiServerUrl();
+      final response = await http.post(
+        Uri.parse('$piUrl/camera/config/reset'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(timeout);
+      
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw Exception('Failed to reset camera settings: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error resetting camera settings: $e');
     }
   }
 }

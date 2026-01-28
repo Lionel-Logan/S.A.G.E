@@ -26,7 +26,7 @@ DESCRIPTION = """
 SAGE Pi Server - FastAPI backend running on Raspberry Pi smartglasses.
 
 Handles:
-- Camera capture and streaming
+- Camera capture and streaming (photos, videos, live preview)
 - Audio input/output (TTS, STT)
 - HUD display commands
 - System monitoring

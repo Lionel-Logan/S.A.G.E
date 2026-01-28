@@ -8,6 +8,8 @@ import 'screens/settings_screen.dart';
 import 'screens/pairing_welcome_screen.dart';
 import 'screens/pairing_flow_screen.dart';
 import 'screens/bluetooth_enable_screen.dart';
+import 'screens/object_detection_settings_screen.dart';
+import 'screens/camera_settings_screen.dart';
 import 'services/storage_service.dart';
 import 'services/bluetooth_audio_service.dart';
 
@@ -192,7 +194,7 @@ class MainNavigator extends StatefulWidget {
   State<MainNavigator> createState() => _MainNavigatorState();
 }
 
-class _MainNavigatorState extends State<MainNavigator> with AutomaticKeepAliveClientMixin {
+class _MainNavigatorState extends State<MainNavigator> with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   String _currentRoute = 'home';
   bool _bluetoothOn = true;
   StreamSubscription? _bluetoothSubscription;
@@ -208,12 +210,38 @@ class _MainNavigatorState extends State<MainNavigator> with AutomaticKeepAliveCl
   void initState() {
     super.initState();
     _listenToBluetoothState();
+    _loadSavedRoute();
+    // Add observer to detect app lifecycle changes
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
     _bluetoothSubscription?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+  
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // Save current route when app goes to background
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      _saveCurrentRoute();
+    }
+  }
+  
+  Future<void> _saveCurrentRoute() async {
+    await StorageService.saveLastRoute(_currentRoute);
+  }
+  
+  Future<void> _loadSavedRoute() async {
+    final savedRoute = await StorageService.getLastRoute();
+    if (savedRoute != null && savedRoute != _currentRoute) {
+      setState(() {
+        _currentRoute = savedRoute;
+      });
+    }
   }
 
   void _listenToBluetoothState() {
@@ -249,6 +277,18 @@ class _MainNavigatorState extends State<MainNavigator> with AutomaticKeepAliveCl
       case 'settings':
         return SettingsScreen(
           key: const PageStorageKey('settings'),
+          onNavigate: _handleNavigation,
+          currentRoute: _currentRoute,
+        );
+      case 'object_detection_settings':
+        return ObjectDetectionSettingsScreen(
+          key: const PageStorageKey('object_detection_settings'),
+          onNavigate: _handleNavigation,
+          currentRoute: _currentRoute,
+        );
+      case 'camera_settings':
+        return CameraSettingsScreen(
+          key: const PageStorageKey('camera_settings'),
           onNavigate: _handleNavigation,
           currentRoute: _currentRoute,
         );
