@@ -38,8 +38,8 @@ translate_service = TranslateService() # <--- INITIALIZED THIS
 @router.post("/ask", response_model=AssistantResponse)
 async def ask_assistant(request: AssistantRequest):
     try:
-        # 1. Predict Intent
-        intent = intent_router.predict_intent(request.query)
+        # 1. Predict Intent (Hybrid: Rule-based + Gemini fallback)
+        intent = await intent_router.predict_intent(request.query)
         print(f"User said: {request.query} -> Detected Intent: {intent}")
 
         response_text = ""
@@ -89,12 +89,13 @@ async def ask_assistant(request: AssistantRequest):
                     if "error" in nav_result:
                         response_text = nav_result["error"]
                     else:
-                        # Success! Create a summary for voice
-                        steps_count = len(nav_result['steps'])
-                        time_min = nav_result['total_time_min']
+                        # Success! Create a summary for voice using formatted data
+                        time_text = nav_result.get('total_time_text', f"about {nav_result['total_time_min']} minutes")
+                        distance_text = nav_result.get('distance_text', f"{nav_result['total_distance']} {nav_result['distance_unit']}")
+                        eta = nav_result.get('eta', '')
                         
-                        # The voice says this:
-                        response_text = f"Route found. It will take about {time_min} minutes. There are {steps_count} steps. I have sent the details to your screen."
+                        # The voice says this (natural and informative):
+                        response_text = f"Route found to {destination}. It's {distance_text} away and will take {time_text}. You should arrive around {eta}. I've sent the step-by-step directions to your screen."
                         
                         # The app gets this (Step-by-Step data):
                         navigation_data = nav_result
