@@ -1,0 +1,26 @@
+# Camera Module Requirements for Raspberry Pi
+# 
+# RECOMMENDED INSTALLATION METHOD:
+# Use system packages for picamera2, PIL, and numpy (they come with Pi OS Trixie)
+# Only install requests via pip
+#
+# Installation commands:
+# sudo apt update
+# sudo apt install -y python3-picamera2 python3-libcamera python3-pil python3-numpy ffmpeg dos2unix
+# pip3 install -r requirements-camera.txt
+
+# HTTP requests (for sending to backend) - install via pip
+requests==2.31.0
+
+# ============================================================================
+# The following are available as system packages (DO NOT install via pip):
+# ============================================================================
+# picamera2       - sudo apt install python3-picamera2
+# PIL/Pillow      - sudo apt install python3-pil  
+# numpy           - sudo apt install python3-numpy
+# ffmpeg          - sudo apt install ffmpeg
+
+# If you MUST use pip (not recommended), uncomment below:
+# picamera2>=0.3.19
+# pillow>=10.0.0
+# numpy>=1.26.0

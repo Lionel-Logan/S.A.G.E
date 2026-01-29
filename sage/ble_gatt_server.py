@@ -685,8 +685,11 @@ class WiFiManager:
             # Sort by signal strength (strongest first)
             networks.sort(key=lambda x: x['signal'], reverse=True)
             
-            logger.info(f'Found {len(networks)} networks')
-            return networks
+            # Return only top 5 strongest networks
+            top_networks = networks[:5]
+            
+            logger.info(f'Found {len(networks)} networks, returning top {len(top_networks)}')
+            return top_networks
             
         except Exception as e:
             logger.error(f'Error scanning networks: {e}')

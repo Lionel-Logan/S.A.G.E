@@ -1,0 +1,8 @@
+# Voice Assistant Only - No FastAPI/Uvicorn
+# These packages are faster to install on ARM
+
+pvporcupine==3.0.0       # Wake word detection (Porcupine)
+vosk==0.3.45             # Offline speech-to-text
+pyaudio==0.2.14          # Audio input/output
+numpy==1.26.3            # Array operations for audio processing
+requests==2.31.0         # HTTP requests to backend

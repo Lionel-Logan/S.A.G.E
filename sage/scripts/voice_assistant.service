@@ -1,0 +1,26 @@
+[Unit]
+Description=SAGE Voice Assistant Service
+After=network.target sound.target pulseaudio.service
+Requires=sound.target
+
+[Service]
+Type=simple
+User=sage
+Group=sage
+WorkingDirectory=/home/sage/S.A.G.E/sage
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/usr/bin/python3 /home/sage/S.A.G.E/sage/voice_assistant.py
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sage-voice
+
+# Resource limits (adjust for Pi 3 Model B)
+MemoryLimit=256M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target
