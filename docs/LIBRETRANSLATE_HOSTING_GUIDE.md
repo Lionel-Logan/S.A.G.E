@@ -1,4 +1,5 @@
 # LibreTranslate Hosting Guide for S.A.G.E
+
 **Setup Instructions for Team Member**
 
 This guide helps you host LibreTranslate translation service on your laptop to support the S.A.G.E smartglass backend.
@@ -17,6 +18,7 @@ This guide helps you host LibreTranslate translation service on your laptop to s
 ## Step 1: Install Docker Desktop
 
 ### Windows
+
 1. Download Docker Desktop: https://www.docker.com/products/docker-desktop
 2. Run the installer
 3. Restart your computer when prompted
@@ -28,6 +30,7 @@ This guide helps you host LibreTranslate translation service on your laptop to s
    ```
 
 ### macOS
+
 1. Download Docker Desktop for Mac: https://www.docker.com/products/docker-desktop
 2. Drag Docker.app to Applications folder
 3. Open Docker from Applications
@@ -39,6 +42,7 @@ This guide helps you host LibreTranslate translation service on your laptop to s
    ```
 
 ### Linux (Ubuntu/Debian)
+
 ```bash
 # Update package manager
 sudo apt update
@@ -63,6 +67,7 @@ docker-compose --version
 ## Step 2: Create LibreTranslate Configuration
 
 1. Create a new folder for LibreTranslate:
+
    ```bash
    # Windows (PowerShell)
    mkdir C:\libretranslate
@@ -76,7 +81,7 @@ docker-compose --version
 2. Create a file named `docker-compose.yml` with this content:
 
 ```yaml
-version: '3'
+version: "3"
 services:
   libretranslate:
     image: libretranslate/libretranslate:latest
@@ -85,12 +90,12 @@ services:
     ports:
       - "5001:5000"
     environment:
-      - LT_THREADS=4              # Use 4 CPU threads
-      - LT_DEBUG=false             # Disable debug mode for performance
-      - LT_SUGGESTIONS=false       # Disable suggestions to save RAM
-      - LT_UPDATE_MODELS=true      # Auto-update language models
+      - LT_THREADS=4 # Use 4 CPU threads
+      - LT_DEBUG=false # Disable debug mode for performance
+      - LT_SUGGESTIONS=false # Disable suggestions to save RAM
+      - LT_UPDATE_MODELS=true # Auto-update language models
     volumes:
-      - libretranslate-data:/app/db  # Persistent storage for models
+      - libretranslate-data:/app/db # Persistent storage for models
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/"]
       interval: 30s
@@ -111,6 +116,7 @@ docker-compose up -d
 ```
 
 **Expected Output:**
+
 ```
 Creating network "libretranslate_default" with the default driver
 Creating volume "libretranslate-data" with default driver
@@ -125,11 +131,13 @@ Creating libretranslate ... done
 ## Step 4: Verify Service is Running
 
 ### Check Docker Container Status
+
 ```bash
 docker-compose ps
 ```
 
 **Should show:**
+
 ```
 Name                 State    Ports
 ------------------------------------------------
@@ -137,6 +145,7 @@ libretranslate       Up       0.0.0.0:5001->5000/tcp
 ```
 
 ### Test Translation API
+
 ```bash
 # Windows (PowerShell)
 Invoke-RestMethod -Uri "http://localhost:5001/translate" -Method POST -ContentType "application/json" -Body '{"q":"hello","source":"en","target":"es"}'
@@ -148,11 +157,13 @@ curl -X POST http://localhost:5001/translate \
 ```
 
 **Expected Response:**
+
 ```json
-{"translatedText": "hola"}
+{ "translatedText": "hola" }
 ```
 
 ### Check Available Languages
+
 ```bash
 # Windows
 Invoke-RestMethod -Uri "http://localhost:5001/languages"
@@ -200,6 +211,7 @@ sudo ufw reload
 macOS: System Preferences → Security & Privacy → Firewall → Firewall Options → Add port 5001
 
 **3. Provide URL to Teammate:**
+
 ```
 http://YOUR_IP_ADDRESS:5001
 Example: http://192.168.1.100:5001
@@ -210,24 +222,29 @@ Example: http://192.168.1.100:5001
 ### Option B: Internet Access via ngrok (Recommended for Remote Access)
 
 **1. Install ngrok:**
+
 - Download: https://ngrok.com/download
 - Extract and place `ngrok` executable in your PATH
 
 **2. Create ngrok Account (Free):**
+
 - Sign up: https://dashboard.ngrok.com/signup
 - Get your auth token from: https://dashboard.ngrok.com/get-started/your-authtoken
 
 **3. Configure ngrok:**
+
 ```bash
 ngrok config add-authtoken YOUR_AUTH_TOKEN
 ```
 
 **4. Start ngrok Tunnel:**
+
 ```bash
 ngrok http 5001
 ```
 
 **Expected Output:**
+
 ```
 Session Status                online
 Account                       your@email.com
@@ -235,6 +252,7 @@ Forwarding                    https://abc123.ngrok.io -> http://localhost:5001
 ```
 
 **5. Provide URL to Teammate:**
+
 ```
 https://abc123.ngrok.io
 ```
@@ -265,31 +283,37 @@ Expected response: {"translatedText": "hola mundo"}
 ## Managing the Service
 
 ### View Logs
+
 ```bash
 docker-compose logs -f
 ```
 
 ### Stop Service
+
 ```bash
 docker-compose stop
 ```
 
 ### Start Service Again
+
 ```bash
 docker-compose start
 ```
 
 ### Restart Service
+
 ```bash
 docker-compose restart
 ```
 
 ### Stop and Remove Service
+
 ```bash
 docker-compose down
 ```
 
 ### Update to Latest Version
+
 ```bash
 docker-compose pull
 docker-compose up -d
@@ -300,20 +324,25 @@ docker-compose up -d
 ## Troubleshooting
 
 ### Port Already in Use
+
 If port 5001 is already taken, edit `docker-compose.yml`:
+
 ```yaml
 ports:
-  - "5002:5000"  # Change 5001 to 5002 or any free port
+  - "5002:5000" # Change 5001 to 5002 or any free port
 ```
 
 ### High RAM Usage
+
 If RAM usage is too high, reduce threads in `docker-compose.yml`:
+
 ```yaml
 environment:
-  - LT_THREADS=2  # Reduce from 4 to 2
+  - LT_THREADS=2 # Reduce from 4 to 2
 ```
 
 ### Service Won't Start
+
 ```bash
 # Check Docker is running
 docker ps
@@ -327,6 +356,7 @@ sudo systemctl restart docker
 ```
 
 ### Translation is Slow
+
 - Close other applications to free RAM
 - Increase Docker memory limit (Docker Desktop → Settings → Resources)
 - Recommended: 4 GB RAM allocated to Docker
@@ -347,6 +377,7 @@ sudo systemctl restart docker
 LibreTranslate supports translation between these languages:
 
 ### Major Languages
+
 - **English** (en)
 - **Spanish** (es)
 - **French** (fr)
@@ -361,6 +392,7 @@ LibreTranslate supports translation between these languages:
 - **Hindi** (hi)
 
 ### European Languages
+
 - Dutch (nl)
 - Polish (pl)
 - Swedish (sv)
@@ -375,6 +407,7 @@ LibreTranslate supports translation between these languages:
 - Ukrainian (uk)
 
 ### Asian Languages
+
 - Bengali (bn)
 - Indonesian (id)
 - Malay (ms)
@@ -386,6 +419,7 @@ LibreTranslate supports translation between these languages:
 - Urdu (ur)
 
 ### Other Languages
+
 - Hebrew (he)
 - Persian (fa)
 - Swahili (sw)
@@ -401,6 +435,7 @@ LibreTranslate supports translation between these languages:
 - Estonian (et)
 
 **Full list of 200+ languages available via API:**
+
 ```bash
 curl http://localhost:5001/languages
 ```
@@ -419,6 +454,7 @@ curl http://localhost:5001/languages
 ## Questions or Issues?
 
 Contact your S.A.G.E teammate if:
+
 - Service won't start
 - URL is not accessible
 - Translation returns errors
