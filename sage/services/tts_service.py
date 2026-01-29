@@ -8,11 +8,13 @@ import logging
 import threading
 import time
 import os
+import subprocess
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
 # Force espeak to use PulseAudio/PipeWire for Bluetooth audio
 os.environ['AUDIODEV'] = 'pulse'
+os.environ['ALSA_CARD'] = 'default'
 
 try:
     import pyttsx3
@@ -82,8 +84,15 @@ class TTSService:
     def _initialize_engine(self):
         """Initialize or reinitialize the TTS engine"""
         try:
+            # Clean up old engine if it exists
+            if self.engine is not None:
+                try:
+                    self.engine.stop()
+                except:
+                    pass
+                self.engine = None
+            
             # Create engine - try multiple times with different configurations
-            self.engine = None
             init_attempts = [
                 lambda: pyttsx3.init('espeak', debug=False),  # Try espeak explicitly
                 lambda: pyttsx3.init(debug=False),  # Try default
@@ -315,6 +324,14 @@ class TTSService:
                 self.is_speaking = True
                 self.stop_requested = False
                 
+                # Reinitialize engine to pick up current audio output device
+                # This ensures TTS uses the currently connected Bluetooth device
+                logger.info("[TTS] Reinitializing engine to use current audio output device")
+                try:
+                    self._initialize_engine()
+                except Exception as e:
+                    logger.warning(f"[TTS] Engine reinitialization failed: {e}, continuing with existing engine")
+                
                 # Log current voice settings
                 try:
                     current_voice = self.engine.getProperty('voice')
@@ -325,10 +342,102 @@ class TTSService:
                 
                 logger.info(f"[TTS] Calling engine.say() and runAndWait()...")
                 
-                self.engine.say(text)
-                self.engine.runAndWait()
-                
-                logger.info(f"[TTS] Speech completed successfully")
+                # Use espeak piped through aplay since aplay works correctly
+                # This ensures audio goes to the current default output (Bluetooth)
+                try:
+                    # Get current configuration
+                    voice_id = self.config.voice_id or 'en'
+                    rate = self.config.voice_speed
+                    volume = int(self.config.voice_volume * 100)  # espeak uses 0-100
+                    
+                    print(f"[TTS] Using espeak -> aplay pipeline for audio output")
+                    print(f"[TTS] Voice: {voice_id}, Rate: {rate}, Volume: {volume}")
+                    print(f"[TTS] Text to speak: '{text}'")
+                    
+                    # First, test if aplay is available and working
+                    test_result = subprocess.run(['which', 'aplay'], capture_output=True)
+                    print(f"[TTS] aplay location: {test_result.stdout.decode().strip()}")
+                    
+                    # Generate audio with espeak and pipe to aplay
+                    espeak_cmd = [
+                        'espeak',
+                        '-v', voice_id,
+                        '-s', str(rate),
+                        '-a', str(volume),
+                        '--stdout',  # Output WAV to stdout
+                        text
+                    ]
+                    
+                    aplay_cmd = ['aplay']  # Use default device (works manually)
+                    
+                    print(f"[TTS] Running: {' '.join(espeak_cmd)} | {' '.join(aplay_cmd)}")
+                    
+                    # Create subprocess pipeline: espeak | aplay
+                    # Use the sage user's environment for PulseAudio access
+                    env = os.environ.copy()
+                    # Set runtime directory for PulseAudio socket access
+                    if 'XDG_RUNTIME_DIR' not in env:
+                        # Assume sage user UID 1000
+                        env['XDG_RUNTIME_DIR'] = '/run/user/1000'
+                    if 'PULSE_SERVER' not in env:
+                        env['PULSE_SERVER'] = f"unix:{env['XDG_RUNTIME_DIR']}/pulse/native"
+                    
+                    print(f"[TTS] Using XDG_RUNTIME_DIR: {env.get('XDG_RUNTIME_DIR')}")
+                    print(f"[TTS] Using PULSE_SERVER: {env.get('PULSE_SERVER')}")
+                    
+                    espeak_proc = subprocess.Popen(
+                        espeak_cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        env=env
+                    )
+                    
+                    aplay_proc = subprocess.Popen(
+                        aplay_cmd,
+                        stdin=espeak_proc.stdout,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        env=env
+                    )
+                    
+                    # Allow espeak_proc to receive SIGPIPE if aplay_proc exits
+                    if espeak_proc.stdout:
+                        espeak_proc.stdout.close()
+                    
+                    print("[TTS] Pipeline started, waiting for completion...")
+                    
+                    # Wait for completion
+                    aplay_stdout, aplay_stderr = aplay_proc.communicate(timeout=30)
+                    espeak_stderr = espeak_proc.stderr.read() if espeak_proc.stderr else b''
+                    espeak_proc.wait()
+                    
+                    print(f"[TTS] espeak exit code: {espeak_proc.returncode}")
+                    print(f"[TTS] aplay exit code: {aplay_proc.returncode}")
+                    
+                    if espeak_stderr:
+                        print(f"[TTS] espeak stderr: {espeak_stderr.decode()}")
+                    if aplay_stderr:
+                        print(f"[TTS] aplay stderr: {aplay_stderr.decode()}")
+                    if aplay_stdout:
+                        print(f"[TTS] aplay stdout: {aplay_stdout.decode()}")
+                    
+                    if aplay_proc.returncode != 0:
+                        print(f"[TTS] aplay failed with code {aplay_proc.returncode}")
+                        raise Exception(f"aplay returned {aplay_proc.returncode}")
+                    
+                    if espeak_proc.returncode != 0:
+                        print(f"[TTS] espeak failed with code {espeak_proc.returncode}")
+                        raise Exception(f"espeak returned {espeak_proc.returncode}")
+                    
+                    print(f"[TTS] Speech completed successfully via espeak->aplay pipeline")
+                    
+                except Exception as pipeline_error:
+                    print(f"[TTS] espeak->aplay pipeline failed: {pipeline_error}")
+                    print(f"[TTS] Falling back to pyttsx3")
+                    # Fallback to pyttsx3
+                    self.engine.say(text)
+                    self.engine.runAndWait()
+                    print(f"[TTS] Speech completed via pyttsx3 fallback")
                 
                 self.is_speaking = False
                 logger.info("Speech completed")
