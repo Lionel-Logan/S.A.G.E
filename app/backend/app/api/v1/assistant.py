@@ -3,12 +3,14 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any # Added Dict, Any for the new response field
 from datetime import datetime
 import re
+import uuid
 # Import Services
 from app.services.intent_router import IntentRouter
 from app.services.gemini_service import GeminiService
 from app.services.vision_service import VisionService
 from app.services.navigation_service import NavigationService
-from app.services.translate_service import TranslateService # <--- ADDED THIS
+from app.services.translate_service import TranslateService
+from app.services.object_detection_session import get_detection_session
 
 router = APIRouter(prefix="/assistant", tags=["AI Assistant"])
 
@@ -102,26 +104,109 @@ async def ask_assistant(request: AssistantRequest):
 
         elif intent == "FACE_RECOGNITION":
             action_type = "vision"
-            if not request.image_data:
-                response_text = "I need to see to recognize faces. No image received."
+            
+            # Check if this is an enrollment request
+            query_lower = request.query.lower()
+            
+            if "enroll" in query_lower or "register" in query_lower or "add" in query_lower:
+                # Enrollment mode: extract name and optional description
+                if not request.image_data:
+                    response_text = "I need an image to enroll a new face."
+                else:
+                    # Extract name from query (simple pattern matching)
+                    # Patterns: "enroll [name]", "register [name]", "add [name] as [description]"
+                    import re
+                    
+                    # Try to extract name and description
+                    # Pattern: "enroll John" or "enroll John as friend"
+                    match = re.search(r"(?:enroll|register|add)\s+([\w\s]+?)(?:\s+as\s+([\w\s]+))?(?:\s*$|\.|,)", query_lower, re.IGNORECASE)
+                    
+                    if match:
+                        name = match.group(1).strip()
+                        description = match.group(2).strip() if match.group(2) else ""
+                        
+                        response_text = await vision_service.enroll_face(name, request.image_data, description)
+                    else:
+                        response_text = "Please specify a name to enroll. For example: 'Enroll John' or 'Enroll Sarah as colleague'."
             else:
-                response_text = await vision_service.recognize_face(request.image_data)
+                # Recognition mode
+                if not request.image_data:
+                    response_text = "I need to see to recognize faces. No image received."
+                else:
+                    response_text = await vision_service.recognize_face(request.image_data)
 
         elif intent == "OBJECT_DETECTION":
             action_type = "vision"
-            if not request.image_data:
-                 response_text = "I need to see to detect objects. No image received."
+            
+            # Check if this is a start/stop command
+            query_lower = request.query.lower()
+            
+            detection_session = get_detection_session()
+            
+            if "start" in query_lower or "begin" in query_lower or "scanning" in query_lower:
+                # Start continuous object detection
+                session_id = f"od_{uuid.uuid4().hex[:8]}"
+                result = await detection_session.start_detection(session_id)
+                
+                if "error" in result:
+                    response_text = result["error"]
+                else:
+                    response_text = "Starting object detection. I'll tell you what I see every few seconds. Say 'stop object detection' when you're done."
+            
+            elif "stop" in query_lower or "end" in query_lower:
+                # Stop continuous object detection
+                result = await detection_session.stop_detection()
+                
+                if "error" in result:
+                    response_text = result["error"]
+                else:
+                    response_text = "Object detection stopped."
+            
             else:
-                response_text = await vision_service.detect_objects(request.image_data)
+                # Single-shot detection with provided image --not continuous scanning
+                if not request.image_data:
+                    response_text = "I need to see to detect objects. Please provide an image or say 'start object detection' for continuous scanning."
+                else:
+                    response_text = await vision_service.detect_objects(request.image_data)
 
         elif intent == "TRANSLATION":
             action_type = "translation"
-            target_lang = "fr" # You can make this dynamic later
+            
+            # Extract target language from query (default to Spanish if not specified)
+            query_lower = request.query.lower()
+            
+            # Simple language extraction: "translate to spanish", "translate this to french"
+            target_lang = "es"  # Default: Spanish
+            
+            if "spanish" in query_lower or "español" in query_lower:
+                target_lang = "es"
+            elif "french" in query_lower or "français" in query_lower:
+                target_lang = "fr"
+            elif "german" in query_lower or "deutsch" in query_lower:
+                target_lang = "de"
+            elif "hindi" in query_lower:
+                target_lang = "hi"
+            elif "chinese" in query_lower or "mandarin" in query_lower:
+                target_lang = "zh"
+            elif "japanese" in query_lower:
+                target_lang = "ja"
+            elif "arabic" in query_lower:
+                target_lang = "ar"
+            elif "portuguese" in query_lower:
+                target_lang = "pt"
+            elif "russian" in query_lower:
+                target_lang = "ru"
+            elif "italian" in query_lower:
+                target_lang = "it"
+            elif "korean" in query_lower:
+                target_lang = "ko"
             
             if request.image_data:
+                # Image translation: Gemini OCR → LibreTranslate
                 response_text = await translate_service.translate_image(request.image_data, target_lang)
             else:
-                clean_query = request.query.replace("translate", "").strip()
+                # Text translation: LibreTranslate only
+                clean_query = request.query.replace("translate", "").replace("to spanish", "").replace("to french", "").replace("to german", "").strip()
                 response_text = await translate_service.translate_text(clean_query, target_lang)
 
         else:

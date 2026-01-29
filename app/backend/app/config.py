@@ -19,9 +19,13 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     
     # Model Servers (Nikhil & Ananya)
-    FACE_RECOGNITION_URL: str = "http://localhost:8001"
-    OBJECT_DETECTION_URL: str = "http://localhost:8002"
+    FACE_RECOGNITION_URL: str = "http://localhost:8002"
+    OBJECT_DETECTION_URL: str = "http://localhost:8001"
     MODEL_REQUEST_TIMEOUT: int = 30
+    
+    # Pi Server (Raspberry Pi)
+    PI_SERVER_URL: str = "http://localhost:5000"  # Pi camera and TTS
+    PI_REQUEST_TIMEOUT: int = 10
     
     # External APIs
     GOOGLE_VISION_CREDENTIALS: Optional[str] = None  # Path to JSON key
