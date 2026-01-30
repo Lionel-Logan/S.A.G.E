@@ -31,13 +31,25 @@ class IntentRouter:
             "FACE_RECOGNITION": [
                 "who is this", "who is that", "recognize face", "identify person",
                 "is that", "do you know who", "who's this person", "who am i looking at",
-                "identify this person", "is this", "recognize this person"
+                "identify this person", "is this", "recognize this person",
+                "tell me who this is", "do you recognize this person"
             ],
+            # FACE_ENROLLMENT disabled - All enrollment happens through failed recognition flow
+            # "FACE_ENROLLMENT": [
+            #     "enroll face", "register face", "add face", "save face", 
+            #     "remember this person", "add this person", "register this person",
+            #     "enroll this face", "save this person", "remember this face",
+            #     "add new face", "register new person", "enroll new face",
+            #     "save new person", "add new person"
+            # ],
             "OBJECT_DETECTION": [
                 "what is this", "what object", "detect object", "scan item",
                 "what am i looking at", "what's in front of me", "what's that object",
                 "identify this object", "what do you see", "describe what you see",
-                "scan this", "what's this thing"
+                "scan this", "what's this thing", "what objects do you see",
+                "tell me what you see", "what are you seeing", "look around",
+                "start object detection", "begin object detection", "start scanning",
+                "stop object detection", "end object detection", "stop scanning"
             ]
         }
 
@@ -46,6 +58,7 @@ class IntentRouter:
             "TRANSLATION": ["translate", "translation", "decipher", "language", "read", "written"],
             "NAVIGATION": ["navigate", "navigation", "route", "direction", "map", "gps", "guide", "way"],
             "FACE_RECOGNITION": ["face", "recognize", "identity", "person", "who"],
+            # "FACE_ENROLLMENT": ["enroll", "register", "remember", "save", "add"],  # Disabled
             "OBJECT_DETECTION": ["detect", "scan", "object", "item", "thing", "see", "describe"]
         }
         

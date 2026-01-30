@@ -20,6 +20,11 @@ class ObjectDetectionSession:
         self.pi_server_url: str = settings.PI_SERVER_URL
         self.pi_timeout: float = settings.PI_REQUEST_TIMEOUT
         
+        # Circuit breaker for error handling
+        self.consecutive_failures: int = 0
+        self.max_consecutive_failures: int = 5  # After 5 failures, pause for longer
+        self.extended_pause_duration: float = 30.0  # 30 seconds pause after repeated failures
+        
     async def start_detection(self, session_id: str) -> Dict:
         """
         Start periodic object detection session.
@@ -37,6 +42,7 @@ class ObjectDetectionSession:
         
         self.session_id = session_id
         self.is_running = True
+        self.consecutive_failures = 0  # Reset circuit breaker
         
         # Start background task for periodic detection
         self.active_session = asyncio.create_task(self._detection_loop())
@@ -97,11 +103,20 @@ class ObjectDetectionSession:
         
         while self.is_running:
             try:
+                # Circuit breaker: If too many consecutive failures, pause for longer
+                if self.consecutive_failures >= self.max_consecutive_failures:
+                    print(f"⚠️ Circuit breaker triggered after {self.consecutive_failures} failures. Pausing for {self.extended_pause_duration}s...")
+                    await self._send_to_tts("Object detection is having issues. I'll try again in a moment.")
+                    await asyncio.sleep(self.extended_pause_duration)
+                    self.consecutive_failures = 0  # Reset after extended pause
+                    continue
+                
                 # 1. Capture image from Pi camera
                 image_base64 = await self._capture_image_from_pi()
                 
                 if not image_base64:
                     print("⚠️ Failed to capture image from Pi, skipping frame...")
+                    self.consecutive_failures += 1
                     await asyncio.sleep(self.detection_interval)
                     continue
                 
@@ -110,11 +125,19 @@ class ObjectDetectionSession:
                 
                 if "error" in detection_result:
                     print(f"⚠️ Detection error: {detection_result['error']}, skipping frame...")
+                    self.consecutive_failures += 1
                     await asyncio.sleep(self.detection_interval)
                     continue
                 
-                # 3. Format result for voice output
-                voice_text = self._format_for_voice(detection_result)
+                # Success! Reset failure counter
+                self.consecutive_failures = 0
+                
+                # 3. Format result for voice output using VisionService
+                from app.services.vision_service import VisionService
+                vision_service = VisionService()
+                
+                # Convert detection result to vision_service expected format
+                voice_text = self._format_detection_to_voice(detection_result)
                 
                 # 4. Send to Pi TTS for voice output
                 await self._send_to_tts(voice_text)
@@ -176,9 +199,10 @@ class ObjectDetectionSession:
         except Exception as e:
             return {"error": str(e)}
     
-    def _format_for_voice(self, detection_result: Dict) -> str:
+    def _format_detection_to_voice(self, detection_result: Dict) -> str:
         """
         Format detection result into voice-friendly text.
+        Uses same logic as VisionService for consistency.
         
         Args:
             detection_result: Result from object detection ML server
@@ -189,15 +213,15 @@ class ObjectDetectionSession:
         if "detected_objects" not in detection_result:
             return "No objects detected."
         
-        objects = detection_result["detected_objects"]
+        objects = detection_result.get("detected_objects", [])
         
         if len(objects) == 0:
-            return "No objects in view."
+            return "I don't see any recognizable objects."
         elif len(objects) == 1:
             obj = objects[0]
             return f"I see {obj.get('position_description', obj['label'])}."
         else:
-            # List multiple objects with positions
+            # List multiple objects with positions (limit to 5 for voice clarity)
             descriptions = [obj.get('position_description', obj['label']) for obj in objects[:5]]
             if len(objects) > 5:
                 return f"I see {', '.join(descriptions[:4])}, and {len(objects) - 4} more objects."

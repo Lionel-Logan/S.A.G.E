@@ -61,7 +61,7 @@ class FaceRecognitionClient(ModelClient):
         except httpx.HTTPError as e:
             raise ModelServerError(f"Face recognition server error: {str(e)}")
     
-    async def enroll_face(self, name: str, image_base64: str, description: str = "", threshold: float = 0.7) -> Dict[str, Any]:
+    async def enroll_face(self, name: str, image_base64: str, description: str = "Person", threshold: float = 0.7) -> Dict[str, Any]:
         """
         Enroll a new face into the database
         
@@ -73,6 +73,10 @@ class FaceRecognitionClient(ModelClient):
         }
         """
         try:
+            # Ensure description is not empty (ML server requires min_length=1)
+            if not description or not description.strip():
+                description = "Person"
+            
             response = await self.client.post(
                 f"{self.base_url}/enroll",
                 json={

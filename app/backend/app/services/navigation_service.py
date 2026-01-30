@@ -38,6 +38,93 @@ class NavigationService:
                 "unit": "m",
                 "text": f"{m} meters" if m != 1 else "1 meter"
             }
+    
+    def _format_time(self, seconds: float) -> dict:
+        """
+        Format duration for display and voice output.
+        
+        Returns:
+            dict with 'minutes', 'text', and 'eta' fields
+        """
+        minutes = round(seconds / 60)
+        
+        # Calculate ETA
+        eta_time = datetime.now() + timedelta(seconds=seconds)
+        eta_formatted = eta_time.strftime("%I:%M %p")  # e.g., "02:30 PM"
+        
+        # Voice-friendly time text
+        if minutes < 1:
+            time_text = "less than a minute"
+        elif minutes == 1:
+            time_text = "1 minute"
+        elif minutes < 60:
+            time_text = f"{minutes} minutes"
+        else:
+            hours = minutes // 60
+            remaining_mins = minutes % 60
+            if remaining_mins == 0:
+                time_text = f"{hours} hour" if hours == 1 else f"{hours} hours"
+            else:
+                time_text = f"{hours} hour {remaining_mins} minutes" if hours == 1 else f"{hours} hours {remaining_mins} minutes"
+        
+        return {
+            "minutes": minutes,
+            "text": time_text,
+            "eta": eta_formatted
+        }
+    
+    async def get_coordinates(self, place_name: str, user_lat: float = None, user_lon: float = None):
+        """
+        Geocode a place name to coordinates using Nominatim.
+        Prioritizes results near user's current location.
+        
+        Args:
+            place_name: Location name to search for
+            user_lat: User's current latitude (for proximity bias)
+            user_lon: User's current longitude (for proximity bias)
+            
+        Returns:
+            Tuple of (lon, lat) or None if not found
+        """
+        params = {
+            "q": place_name,
+            "format": "json",
+            "limit": 1,
+            "addressdetails": 1
+        }
+        
+        # Add proximity bias if user location is available
+        if user_lat is not None and user_lon is not None:
+            # Nominatim prioritizes results near these coordinates
+            params["lat"] = user_lat
+            params["lon"] = user_lon
+            
+            # Optional: Add viewbox to restrict search area (50km radius)
+            # This ensures we find the NEAREST location
+            params["viewbox"] = f"{user_lon-0.5},{user_lat-0.5},{user_lon+0.5},{user_lat+0.5}"
+            params["bounded"] = 1  # Restrict results to viewbox
+        
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.get(self.geocoder_url, params=params)
+                resp.raise_for_status()
+                data = resp.json()
+            
+            if data and len(data) > 0:
+                result = data[0]
+                lon = float(result["lon"])
+                lat = float(result["lat"])
+                return (lon, lat)
+            else:
+                return None
+                
+        except httpx.TimeoutException:
+            print(f"⚠️ Geocoding timeout for: {place_name}")
+            return None
+        except Exception as e:
+            print(f"⚠️ Geocoding error: {e}")
+            return None
+    
     async def get_directions(self, start_lon: float, start_lat: float, destination_query: str):
         """
         Returns a dictionary with route metadata and a FULL LIST of steps.
@@ -51,8 +138,8 @@ class NavigationService:
         if not destination_query or not destination_query.strip():
             return {"error": "Please provide a destination."}
         
-        # Get destination coordinates
-        dest_coords = await self.get_coordinates(destination_query)
+        # Get destination coordinates with proximity bias (finds NEAREST location)
+        dest_coords = await self.get_coordinates(destination_query, start_lat, start_lon)
         if not dest_coords:
             return {"error": f"I couldn't find '{destination_query}'. Please try a different location name."}
 
@@ -144,19 +231,13 @@ class NavigationService:
             return {"error": "Navigation service is temporarily unavailable. Please try again later."}
         except Exception as e:
             print(f"⚠️ Routing error: {e}")
-            return {"error": "An error occurred while finding the route. Please try again."    return None
-        except httpx.HTTPError as e:
-            print(f"⚠️ Geocoding HTTP error: {e}")
-            return None
-        except Exception as e:
-            print(f"⚠️ Geocoding error: {e}")
-            return None
+            return {"error": "An error occurred while finding the route. Please try again."}
 # 👇 UPDATED FUNCTION 👇
     async def get_directions(self, start_lon, start_lat, destination_query: str):
         """
         Returns a dictionary with route metadata and a FULL LIST of steps.
         """
-        dest_coords = await self.get_coordinates(destination_query)
+        dest_coords = await self.get_coordinates(destination_query, start_lat, start_lon)
         if not dest_coords:
             return {"error": f"Place '{destination_query}' not found."}
 

@@ -59,20 +59,24 @@ class VisionService:
             print(f"Face recognition error: {e}")
             return f"Face recognition unavailable: {str(e)}"
     
-    async def enroll_face(self, name: str, base64_image: str, description: str = "") -> str:
+    async def enroll_face(self, name: str, base64_image: str, description: str = "Person") -> str:
         """
         Enroll a new face into the database
         
         Args:
             name: Person's name
             base64_image: Base64 encoded image
-            description: Optional description (relation, role, etc.)
+            description: Optional description (relation, role, etc.) - defaults to "Person"
             
         Returns:
             Enrollment result message
         """
         try:
             from app.services.model_client import FaceRecognitionClient
+            
+            # Ensure description is not empty (default to "Person")
+            if not description or not description.strip():
+                description = "Person"
             
             # Call Nikhil's face enrollment server
             client = FaceRecognitionClient()

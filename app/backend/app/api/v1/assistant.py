@@ -1,9 +1,11 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional, Dict, Any # Added Dict, Any for the new response field
-from datetime import datetime
+from typing import Optional, Dict, Any
+from datetime import datetime, timedelta
 import re
 import uuid
+import httpx
+
 # Import Services
 from app.services.intent_router import IntentRouter
 from app.services.gemini_service import GeminiService
@@ -11,8 +13,49 @@ from app.services.vision_service import VisionService
 from app.services.navigation_service import NavigationService
 from app.services.translate_service import TranslateService
 from app.services.object_detection_session import get_detection_session
+from app.config import settings
 
 router = APIRouter(prefix="/assistant", tags=["AI Assistant"])
+
+# ==================== ENROLLMENT CACHE ====================
+# In-memory cache for face enrollment workflow
+# Structure: {user_id: {image_base64: str, timestamp: datetime, state: str}}
+enrollment_cache: Dict[str, Dict[str, Any]] = {}
+ENROLLMENT_TIMEOUT = 90  # seconds (1.5 minutes)
+
+def _cleanup_expired_cache():
+    """Remove expired enrollment cache entries"""
+    current_time = datetime.utcnow()
+    expired_users = [
+        user_id for user_id, data in enrollment_cache.items()
+        if (current_time - data["timestamp"]).total_seconds() > ENROLLMENT_TIMEOUT
+    ]
+    for user_id in expired_users:
+        del enrollment_cache[user_id]
+        print(f"Cleaned up expired enrollment cache for user: {user_id}")
+
+async def _capture_image_from_pi() -> Optional[str]:
+    """Capture image from Pi server camera"""
+    try:
+        async with httpx.AsyncClient(timeout=settings.PI_REQUEST_TIMEOUT) as client:
+            response = await client.post(f"{settings.PI_SERVER_URL}/camera/capture_photo_base64")
+            response.raise_for_status()
+            result = response.json()
+            return result.get("image_base64")
+    except Exception as e:
+        print(f"Failed to capture image from Pi: {e}")
+        return None
+
+async def _send_to_tts(text: str):
+    """Send text to Pi server for TTS output"""
+    try:
+        async with httpx.AsyncClient(timeout=settings.PI_REQUEST_TIMEOUT) as client:
+            await client.post(
+                f"{settings.PI_SERVER_URL}/tts/speak",
+                json={"text": text, "blocking": False}
+            )
+    except Exception as e:
+        print(f"TTS error: {e}")
 
 # Define the Input Schema
 class AssistantRequest(BaseModel):
@@ -40,13 +83,74 @@ translate_service = TranslateService() # <--- INITIALIZED THIS
 @router.post("/ask", response_model=AssistantResponse)
 async def ask_assistant(request: AssistantRequest):
     try:
-        # 1. Predict Intent (Hybrid: Rule-based + Gemini fallback)
-        intent = await intent_router.predict_intent(request.query)
-        print(f"User said: {request.query} -> Detected Intent: {intent}")
-
+        # Cleanup expired cache entries first
+        _cleanup_expired_cache()
+        
         response_text = ""
         action_type = "chat"
         navigation_data = None # Default to None
+        
+        # PRIORITY: Check enrollment flow BEFORE intent routing
+        # This handles "yes/no" and "name" responses during face enrollment
+        if request.user_id in enrollment_cache:
+            cache_data = enrollment_cache[request.user_id]
+            
+            # State: awaiting_confirmation ("yes" or "no")
+            if cache_data["state"] == "awaiting_confirmation":
+                query_lower = request.query.lower().strip()
+                
+                if "yes" in query_lower or "yeah" in query_lower or "sure" in query_lower or "ok" in query_lower:
+                    # User confirmed enrollment - move to name collection
+                    enrollment_cache[request.user_id]["state"] = "awaiting_name"
+                    enrollment_cache[request.user_id]["timestamp"] = datetime.utcnow()
+                    response_text = "What is their name and relation? Say it like 'John as colleague', or just say the name."
+                else:
+                    # User declined enrollment
+                    del enrollment_cache[request.user_id]
+                    response_text = "Okay, not enrolling this person."
+                
+                action_type = "vision"
+                await _send_to_tts(response_text)
+                return AssistantResponse(
+                    response_text=response_text,
+                    action_type=action_type,
+                    timestamp=datetime.utcnow(),
+                    navigation_data=None
+                )
+            
+            # State: awaiting_name (extract name and description)
+            elif cache_data["state"] == "awaiting_name":
+                # Extract name and optional description from query
+                # Pattern: "John as colleague" or just "John"
+                match = re.search(r"^([\w\s]+?)(?:\s+as\s+([\w\s]+))?$", request.query.strip(), re.IGNORECASE)
+                
+                if match:
+                    name = match.group(1).strip()
+                    description = match.group(2).strip() if match.group(2) else "Person"
+                    
+                    # Retrieve cached image
+                    cached_image = cache_data["image_base64"]
+                    
+                    # Enroll the face
+                    response_text = await vision_service.enroll_face(name, cached_image, description)
+                    
+                    # Clear cache after enrollment
+                    del enrollment_cache[request.user_id]
+                else:
+                    response_text = "I didn't catch that. Please say the person's name, like 'John' or 'John as colleague'."
+                
+                action_type = "vision"
+                await _send_to_tts(response_text)
+                return AssistantResponse(
+                    response_text=response_text,
+                    action_type=action_type,
+                    timestamp=datetime.utcnow(),
+                    navigation_data=None
+                )
+        
+        # 1. Predict Intent (Hybrid: Rule-based + Gemini fallback)
+        intent = await intent_router.predict_intent(request.query)
+        print(f"User said: {request.query} -> Detected Intent: {intent}")
 
         if intent == "NAVIGATION":
             action_type = "navigation"
@@ -101,39 +205,46 @@ async def ask_assistant(request: AssistantRequest):
                         
                         # The app gets this (Step-by-Step data):
                         navigation_data = nav_result
+            
+            # Send navigation response to TTS
+            await _send_to_tts(response_text)
 
         elif intent == "FACE_RECOGNITION":
             action_type = "vision"
             
-            # Check if this is an enrollment request
-            query_lower = request.query.lower()
+            # Regular face recognition flow (enrollment state already handled above)
+            # Capture image from Pi if not provided
+            image_data = request.image_data
+            if not image_data:
+                image_data = await _capture_image_from_pi()
+                if not image_data:
+                    response_text = "I couldn't capture an image. Please try again."
+                    await _send_to_tts(response_text)
+                    return AssistantResponse(
+                        response_text=response_text,
+                        action_type=action_type,
+                        timestamp=datetime.utcnow(),
+                        navigation_data=None
+                    )
             
-            if "enroll" in query_lower or "register" in query_lower or "add" in query_lower:
-                # Enrollment mode: extract name and optional description
-                if not request.image_data:
-                    response_text = "I need an image to enroll a new face."
-                else:
-                    # Extract name from query (simple pattern matching)
-                    # Patterns: "enroll [name]", "register [name]", "add [name] as [description]"
-                    import re
-                    
-                    # Try to extract name and description
-                    # Pattern: "enroll John" or "enroll John as friend"
-                    match = re.search(r"(?:enroll|register|add)\s+([\w\s]+?)(?:\s+as\s+([\w\s]+))?(?:\s*$|\.|,)", query_lower, re.IGNORECASE)
-                    
-                    if match:
-                        name = match.group(1).strip()
-                        description = match.group(2).strip() if match.group(2) else ""
-                        
-                        response_text = await vision_service.enroll_face(name, request.image_data, description)
-                    else:
-                        response_text = "Please specify a name to enroll. For example: 'Enroll John' or 'Enroll Sarah as colleague'."
+            # Recognize faces
+            result = await vision_service.recognize_face(image_data)
+            
+            # Check if face was not recognized (Unknown)
+            if "don't recognize" in result or "unrecognized" in result:
+                # Cache the image and prompt for enrollment
+                enrollment_cache[request.user_id] = {
+                    "image_base64": image_data,
+                    "timestamp": datetime.utcnow(),
+                    "state": "awaiting_confirmation"
+                }
+                response_text = result + " Would you like me to enroll them? Say yes or no."
             else:
-                # Recognition mode
-                if not request.image_data:
-                    response_text = "I need to see to recognize faces. No image received."
-                else:
-                    response_text = await vision_service.recognize_face(request.image_data)
+                # Face was recognized successfully
+                response_text = result
+            
+            # Send face recognition response to TTS
+            await _send_to_tts(response_text)
 
         elif intent == "OBJECT_DETECTION":
             action_type = "vision"
@@ -163,11 +274,26 @@ async def ask_assistant(request: AssistantRequest):
                     response_text = "Object detection stopped."
             
             else:
-                # Single-shot detection with provided image --not continuous scanning
-                if not request.image_data:
-                    response_text = "I need to see to detect objects. Please provide an image or say 'start object detection' for continuous scanning."
-                else:
-                    response_text = await vision_service.detect_objects(request.image_data)
+                # Single-shot detection
+                # Auto-capture from Pi if no image provided
+                image_data = request.image_data
+                if not image_data:
+                    image_data = await _capture_image_from_pi()
+                    if not image_data:
+                        response_text = "I couldn't capture an image. Please try again or say 'start object detection' for continuous scanning."
+                        await _send_to_tts(response_text)
+                        return AssistantResponse(
+                            response_text=response_text,
+                            action_type=action_type,
+                            timestamp=datetime.utcnow(),
+                            navigation_data=None
+                        )
+                
+                # Detect objects in image
+                response_text = await vision_service.detect_objects(image_data)
+            
+            # Send object detection response to TTS (both continuous control and single-shot)
+            await _send_to_tts(response_text)
 
         elif intent == "TRANSLATION":
             action_type = "translation"
@@ -208,11 +334,17 @@ async def ask_assistant(request: AssistantRequest):
                 # Text translation: LibreTranslate only
                 clean_query = request.query.replace("translate", "").replace("to spanish", "").replace("to french", "").replace("to german", "").strip()
                 response_text = await translate_service.translate_text(clean_query, target_lang)
+            
+            # Send translation response to TTS
+            await _send_to_tts(response_text)
 
         else:
             # Default to Gemini (Chat)
             action_type = "chat"
             response_text = await gemini_service.ask(request.query)
+            
+            # Send chat response to TTS
+            await _send_to_tts(response_text)
 
         return AssistantResponse(
             response_text=response_text,
