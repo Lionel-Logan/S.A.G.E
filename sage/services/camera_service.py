@@ -119,9 +119,9 @@ class CameraService:
             camera.configure(video_config)
         
         elif mode == "stream":
-            # Preview/streaming configuration (lower resolution for speed)
+            # Preview/streaming configuration (always 480p for optimal performance)
             stream_config = camera.create_preview_configuration(
-                main={"size": resolution}
+                main={"size": (640, 480)}  # Always 480p for streaming
             )
             camera.configure(stream_config)
         

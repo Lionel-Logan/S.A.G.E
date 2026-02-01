@@ -1149,9 +1149,9 @@ class _SettingsScreenState extends State<SettingsScreen>
           _buildDetailedDeviceStatusCard(),
           const SizedBox(height: 40),
           
-          // CONNECTIVITY Section
-          _buildSectionHeader('CONNECTIVITY', 'Network and connection management'),
-          const SizedBox(height: 12),
+          // DEVICE Section (moved to top, includes WiFi and Audio)
+          _buildSectionHeader('DEVICE', 'Hardware and connectivity configuration'),
+          const SizedBox(height: 16),
           _buildActionButton(
             'Wi-Fi Settings',
             'Configure WiFi connection for S.A.G.E',
@@ -1159,7 +1159,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             AppTheme.cyan,
             _openNetworkSettings,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _buildActionButton(
             'Audio Settings',
             'Pair and manage Bluetooth audio devices',
@@ -1167,20 +1167,33 @@ class _SettingsScreenState extends State<SettingsScreen>
             AppTheme.purple,
             _openBluetoothAudioSettings,
           ),
-          
-          const SizedBox(height: 40),
-          
-          // DEVICE Section
-          _buildSectionHeader('DEVICE', 'Hardware configuration'),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _buildActionButton(
             'Camera Settings',
-            'Configure Pi Camera capture and recording',
+            'Configure camera capture and recording',
             Icons.camera_outlined,
             AppTheme.cyan,
             () {
               widget.onNavigate('camera_settings');
             },
+          ),
+          const SizedBox(height: 12),
+          _buildActionButton(
+            'Microphone Settings',
+            'Configure audio input and processing',
+            Icons.mic_outlined,
+            AppTheme.purple,
+            () {
+              widget.onNavigate('microphone_settings');
+            },
+          ),
+          const SizedBox(height: 12),
+          _buildActionButton(
+            'Server Settings',
+            'Configure S.A.G.E IP address for server connectivity',
+            Icons.dns_rounded,
+            AppTheme.cyan,
+            _configurePiServer,
           ),
           
           const SizedBox(height: 40),
@@ -1193,14 +1206,6 @@ class _SettingsScreenState extends State<SettingsScreen>
           _buildTextToSpeechConfig(),
           const SizedBox(height: 16),
           _buildMachineLearningConfig(),
-          const SizedBox(height: 16),
-          _buildActionButton(
-            'Server IP Settings',
-            'Configure S.A.G.E IP address for server connectivity',
-            Icons.dns_rounded,
-            AppTheme.cyan,
-            _configurePiServer,
-          ),
           
           const SizedBox(height: 40),
           
@@ -1224,11 +1229,6 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           
           const SizedBox(height: 40),
-          
-          // App Info
-          _buildSectionHeader('ABOUT', 'Application information'),
-          const SizedBox(height: 16),
-          _buildInfoCard(),
         ],
       ),
     );
@@ -1834,6 +1834,12 @@ class _SettingsScreenState extends State<SettingsScreen>
             onTap: () {
               setState(() {
                 _showSTTEngineOptions = !_showSTTEngineOptions;
+                // Auto-close other dropdowns
+                if (_showSTTEngineOptions) {
+                  _showTTSOptions = false;
+                  _showTTSAdvanced = false;
+                  _showMLOptions = false;
+                }
                 // If closing dropdown, also close API key input
                 if (!_showSTTEngineOptions) {
                   _showGoogleApiKeyInput = false;
@@ -2239,6 +2245,11 @@ class _SettingsScreenState extends State<SettingsScreen>
             onTap: () {
               setState(() {
                 _showTTSOptions = !_showTTSOptions;
+                // Auto-close other dropdowns
+                if (_showTTSOptions) {
+                  _showSTTEngineOptions = false;
+                  _showMLOptions = false;
+                }
                 if (!_showTTSOptions) {
                   _showTTSAdvanced = false;
                 }
@@ -3007,6 +3018,12 @@ class _SettingsScreenState extends State<SettingsScreen>
             onTap: () {
               setState(() {
                 _showMLOptions = !_showMLOptions;
+                // Auto-close other dropdowns
+                if (_showMLOptions) {
+                  _showSTTEngineOptions = false;
+                  _showTTSOptions = false;
+                  _showTTSAdvanced = false;
+                }
               });
             },
             child: Row(
@@ -3094,7 +3111,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Icon(
-                                  Icons.search_outlined,
+                                  Icons.view_in_ar_outlined,
                                   color: AppTheme.cyan,
                                   size: 24,
                                 ),

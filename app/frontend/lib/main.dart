@@ -10,6 +10,7 @@ import 'screens/pairing_flow_screen.dart';
 import 'screens/bluetooth_enable_screen.dart';
 import 'screens/object_detection_settings_screen.dart';
 import 'screens/camera_settings_screen.dart';
+import 'screens/microphone_settings_screen.dart';
 import 'services/storage_service.dart';
 import 'services/bluetooth_audio_service.dart';
 
@@ -194,8 +195,9 @@ class MainNavigator extends StatefulWidget {
   State<MainNavigator> createState() => _MainNavigatorState();
 }
 
-class _MainNavigatorState extends State<MainNavigator> with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
+class _MainNavigatorState extends State<MainNavigator> with AutomaticKeepAliveClientMixin {
   String _currentRoute = 'home';
+  final List<String> _navigationHistory = [];
   bool _bluetoothOn = true;
   StreamSubscription? _bluetoothSubscription;
   
@@ -210,38 +212,12 @@ class _MainNavigatorState extends State<MainNavigator> with AutomaticKeepAliveCl
   void initState() {
     super.initState();
     _listenToBluetoothState();
-    _loadSavedRoute();
-    // Add observer to detect app lifecycle changes
-    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
     _bluetoothSubscription?.cancel();
-    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
-  }
-  
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    super.didChangeAppLifecycleState(state);
-    // Save current route when app goes to background
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
-      _saveCurrentRoute();
-    }
-  }
-  
-  Future<void> _saveCurrentRoute() async {
-    await StorageService.saveLastRoute(_currentRoute);
-  }
-  
-  Future<void> _loadSavedRoute() async {
-    final savedRoute = await StorageService.getLastRoute();
-    if (savedRoute != null && savedRoute != _currentRoute) {
-      setState(() {
-        _currentRoute = savedRoute;
-      });
-    }
   }
 
   void _listenToBluetoothState() {
@@ -257,10 +233,25 @@ class _MainNavigatorState extends State<MainNavigator> with AutomaticKeepAliveCl
   void _handleNavigation(String route) {
     print('Navigation requested to: $route'); // Debug print
     if (route != _currentRoute) {
+      // Add current route to history before switching
+      _navigationHistory.add(_currentRoute);
       setState(() {
         _currentRoute = route;
       });
-      print('Navigation complete. Current route: $_currentRoute'); // Debug print
+      print('Navigation complete. Current route: $_currentRoute, History: $_navigationHistory'); // Debug print
+    }
+  }
+  
+  void _goBack() {
+    if (_navigationHistory.isNotEmpty) {
+      final previousRoute = _navigationHistory.removeLast();
+      setState(() {
+        _currentRoute = previousRoute;
+      });
+      print('Navigated back to: $previousRoute'); // Debug print
+    } else {
+      // If no history, exit app
+      print('No history, exiting app');
     }
   }
 
@@ -289,6 +280,12 @@ class _MainNavigatorState extends State<MainNavigator> with AutomaticKeepAliveCl
       case 'camera_settings':
         return CameraSettingsScreen(
           key: const PageStorageKey('camera_settings'),
+          onNavigate: _handleNavigation,
+          currentRoute: _currentRoute,
+        );
+      case 'microphone_settings':
+        return MicrophoneSettingsScreen(
+          key: const PageStorageKey('microphone_settings'),
           onNavigate: _handleNavigation,
           currentRoute: _currentRoute,
         );
@@ -323,41 +320,47 @@ class _MainNavigatorState extends State<MainNavigator> with AutomaticKeepAliveCl
       );
     }
     
-    return PageStorage(
-      bucket: _bucket,
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 400),
-        switchInCurve: Curves.easeInOutCubic,
-        switchOutCurve: Curves.easeInOutCubic,
-        transitionBuilder: (child, animation) {
-          // Fade transition
-          final fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-            CurvedAnimation(
-              parent: animation,
-              curve: const Interval(0.0, 1.0, curve: Curves.easeOut),
-            ),
-          );
-          
-          // Slide transition
-          final slideAnimation = Tween<Offset>(
-            begin: const Offset(0.03, 0),
-            end: Offset.zero,
-          ).animate(
-            CurvedAnimation(
-              parent: animation,
-              curve: const Interval(0.0, 1.0, curve: Curves.easeOutCubic),
-            ),
-          );
-          
-          return FadeTransition(
-            opacity: fadeAnimation,
-            child: SlideTransition(
-              position: slideAnimation,
-              child: child,
-            ),
-          );
-        },
-        child: _getCurrentScreen(),
+    return WillPopScope(
+      onWillPop: () async {
+        _goBack();
+        return false; // Prevent default back behavior
+      },
+      child: PageStorage(
+        bucket: _bucket,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 400),
+          switchInCurve: Curves.easeInOutCubic,
+          switchOutCurve: Curves.easeInOutCubic,
+          transitionBuilder: (child, animation) {
+            // Fade transition
+            final fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+              CurvedAnimation(
+                parent: animation,
+                curve: const Interval(0.0, 1.0, curve: Curves.easeOut),
+              ),
+            );
+            
+            // Slide transition
+            final slideAnimation = Tween<Offset>(
+              begin: const Offset(0.03, 0),
+              end: Offset.zero,
+            ).animate(
+              CurvedAnimation(
+                parent: animation,
+                curve: const Interval(0.0, 1.0, curve: Curves.easeOutCubic),
+              ),
+            );
+            
+            return FadeTransition(
+              opacity: fadeAnimation,
+              child: SlideTransition(
+                position: slideAnimation,
+                child: child,
+              ),
+            );
+          },
+          child: _getCurrentScreen(),
+        ),
       ),
     );
   }

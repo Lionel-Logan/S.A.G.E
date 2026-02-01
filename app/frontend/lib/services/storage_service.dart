@@ -11,7 +11,6 @@ class StorageService {
   static const String _keyWiFiPassword = 'wifi_password';
   static const String _keyWiFiTimestamp = 'wifi_timestamp';
   static const String _keyPairingTimestamp = 'pairing_timestamp';
-  static const String _keyLastRoute = 'last_route';
 
   /// Check if device has been paired
   static Future<bool> isPaired() async {
@@ -135,23 +134,5 @@ class StorageService {
     } catch (e) {
       return null;
     }
-  }
-  
-  /// Save last viewed route
-  static Future<void> saveLastRoute(String route) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyLastRoute, route);
-  }
-  
-  /// Get last viewed route
-  static Future<String?> getLastRoute() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyLastRoute);
-  }
-  
-  /// Clear last route (useful when logging out or resetting)
-  static Future<void> clearLastRoute() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_keyLastRoute);
   }
 }

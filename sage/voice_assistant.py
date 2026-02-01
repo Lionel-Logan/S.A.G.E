@@ -13,6 +13,8 @@ import time
 import requests
 from datetime import datetime
 from pathlib import Path
+from flask import Flask, jsonify, request as flask_request
+from werkzeug.serving import make_server
 
 # Import configuration
 from config import voice_config as config
@@ -70,6 +72,11 @@ class VoiceAssistant:
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
         
+        # Initialize HTTP server for internal API
+        self.http_server = None
+        self.http_thread = None
+        self._init_http_server()
+        
         # Update status
         self.update_status("initialized")
     
@@ -77,6 +84,95 @@ class VoiceAssistant:
         """Handle shutdown signals"""
         logger.info(f"Received signal {signum}, shutting down...")
         self.stop()
+    
+    def _init_http_server(self):
+        """Initialize Flask HTTP server for internal API"""
+        app = Flask(__name__)
+        
+        @app.route('/health', methods=['GET'])
+        def health():
+            """Health check endpoint"""
+            return jsonify({
+                "status": "ok",
+                "service": config.VOICE_ASSISTANT_NAME,
+                "version": config.VOICE_ASSISTANT_VERSION,
+                "timestamp": datetime.utcnow().isoformat()
+            })
+        
+        @app.route('/record_and_transcribe', methods=['POST'])
+        def record_and_transcribe():
+            """Record audio and transcribe it with real-time streaming"""
+            try:
+                logger.info("📡 HTTP API: Recording and transcription requested")
+                
+                
+                # Reset STT recognizer for new session
+                self.stt_service.reset_recognizer()
+                
+                # Track transcription results
+                last_partial = ""
+                final_text = ""
+                
+                def transcribe_chunk(chunk_data):
+                    """Callback to process each audio chunk"""
+                    nonlocal last_partial, final_text
+                    partial_text, is_final = self.stt_service.process_audio_chunk(chunk_data)
+                    
+                    if partial_text and partial_text != last_partial:
+                        logger.info(f"📝 Streaming: '{partial_text}'")
+                        last_partial = partial_text
+                    
+                    if is_final and partial_text:
+                        logger.info(f"✅ Final: '{partial_text}'")
+                        final_text = partial_text
+                
+                # Record with streaming transcription
+                logger.info("🎤 Recording audio with real-time transcription...")
+                audio_data, duration = self.audio_manager.record_with_streaming_callback(transcribe_chunk)
+                
+                if not audio_data or duration < 0.5:
+                    logger.warning(f"Recording failed or too short (duration: {duration}s)")
+                    return jsonify({
+                        "success": False,
+                        "error": "RecordingFailed",
+                        "message": "No audio recorded or recording too short",
+                        "duration": duration
+                    }), 400
+                
+                logger.info(f"Recorded {duration:.2f}s of audio")
+                
+                # Use streaming result or fallback to full transcription
+                logger.info("🔄 Finalizing transcription...")
+                transcription = final_text if final_text else self.stt_service.get_final_result()
+                
+                if not transcription:
+                    logger.warning("STT transcription returned empty result")
+                    return jsonify({
+                        "success": False,
+                        "error": "TranscriptionFailed",
+                        "message": "Could not transcribe audio",
+                        "duration": duration
+                    }), 400
+                
+                logger.info(f"✓ Transcription successful: '{transcription}'")
+                
+                return jsonify({
+                    "success": True,
+                    "transcription": transcription,
+                    "duration": duration,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+                
+            except Exception as e:
+                logger.error(f"Error in record_and_transcribe: {e}", exc_info=True)
+                return jsonify({
+                    "success": False,
+                    "error": "InternalError",
+                    "message": str(e)
+                }), 500
+        
+        # Store the Flask app
+        self.flask_app = app
     
     def update_status(self, state: str, data: dict = None):
         """
@@ -266,10 +362,15 @@ class VoiceAssistant:
             return
         
         self.running = True
+        
+        # Start HTTP server in background thread
+        self._start_http_server()
+        
         logger.info("=" * 60)
         logger.info(f"🚀 {config.VOICE_ASSISTANT_NAME} started!")
         logger.info(f"Wake word: '{config.WAKE_WORD}'")
         logger.info(f"Backend URL: {config.BACKEND_API_URL}")
+        logger.info(f"HTTP API: http://localhost:8002")
         logger.info("=" * 60)
         
         self.update_status("listening")
@@ -284,6 +385,16 @@ class VoiceAssistant:
         finally:
             self.stop()
     
+    def _start_http_server(self):
+        """Start HTTP server in background thread"""
+        try:
+            self.http_server = make_server('127.0.0.1', 8002, self.flask_app, threaded=True)
+            self.http_thread = threading.Thread(target=self.http_server.serve_forever, daemon=True)
+            self.http_thread.start()
+            logger.info("✓ HTTP API server started on port 8002")
+        except Exception as e:
+            logger.error(f"Failed to start HTTP server: {e}")
+    
     def stop(self):
         """Stop the voice assistant service"""
         if not self.running:
@@ -291,6 +402,14 @@ class VoiceAssistant:
         
         logger.info("Stopping voice assistant...")
         self.running = False
+        
+        # Stop HTTP server
+        if self.http_server:
+            try:
+                logger.info("Stopping HTTP server...")
+                self.http_server.shutdown()
+            except Exception as e:
+                logger.error(f"Error stopping HTTP server: {e}")
         
         # Stop services
         try:

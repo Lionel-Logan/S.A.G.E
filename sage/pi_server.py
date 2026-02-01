@@ -9,6 +9,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+import requests
 
 from fastapi import FastAPI, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -784,6 +785,121 @@ async def stop_continuous_capture():
             }
         )
 
+
+# ==================== FACIAL RECOGNITION SUPPORT ====================
+
+@app.post("/request_name")
+async def request_name():
+    """
+    Request user to provide name and description for unrecognized person.
+    Used in facial recognition workflow when person is not found in database.
+    
+    Workflow:
+    1. Play TTS prompt asking for name and relationship
+    2. Call voice_assistant service to record and transcribe
+    3. Return transcribed text to backend
+    
+    Returns:
+        JSON response with transcription and metadata
+    """
+    # Check if TTS service is available
+    if not tts_service:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "ServiceUnavailable",
+                "message": "TTS service not available",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+    
+    try:
+        logger.info("Request name endpoint called - starting facial recognition name request flow")
+        
+        # Step 1: Play TTS prompt
+        prompt_text = "I am not able to recognize this person. Can you give me more details, name and how this person is related to you"
+        logger.info(f"Playing TTS prompt: '{prompt_text}'")
+        
+        tts_success = tts_service.speak(prompt_text, blocking=True)
+        if not tts_success:
+            logger.warning("TTS prompt failed, but continuing with recording")
+        
+        # Step 2: Call voice assistant service for recording and transcription
+        logger.info("Calling voice assistant service for recording...")
+        
+        try:
+            response = requests.post(
+                "http://127.0.0.1:8002/record_and_transcribe",
+                timeout=60  # 60 seconds timeout - includes TTS + recording + transcription
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                if data.get("success"):
+                    logger.info(f"✓ Transcription successful: '{data.get('transcription')}'")
+                    return {
+                        "success": True,
+                        "transcription": data.get("transcription"),
+                        "duration": data.get("duration"),
+                        "prompt": prompt_text,
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                else:
+                    logger.warning(f"Voice assistant returned error: {data.get('error')}")
+                    return JSONResponse(
+                        status_code=400,
+                        content={
+                            "error": data.get("error", "VoiceAssistantError"),
+                            "message": data.get("message", "Recording or transcription failed"),
+                            "timestamp": datetime.utcnow().isoformat()
+                        }
+                    )
+            else:
+                logger.error(f"Voice assistant HTTP error: {response.status_code}")
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "error": "VoiceAssistantError",
+                        "message": f"Voice assistant returned status {response.status_code}",
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                )
+                
+        except requests.exceptions.Timeout:
+            logger.error("Voice assistant request timed out")
+            return JSONResponse(
+                status_code=504,
+                content={
+                    "error": "Timeout",
+                    "message": "Recording timed out",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            )
+        except requests.exceptions.ConnectionError:
+            logger.error("Could not connect to voice assistant service")
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": "ServiceUnavailable",
+                    "message": "Voice assistant service not available. Ensure voice_assistant.py is running.",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            )
+        
+    except Exception as e:
+        logger.error(f"Request name error: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "RequestNameError",
+                "message": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+
+
+# ==================== VIDEO RECORDING ENDPOINTS ====================
 
 @app.post("/camera/video/start")
 async def start_video_recording(
