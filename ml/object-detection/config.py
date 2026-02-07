@@ -32,7 +32,7 @@ API_PREFIX = "/api/v1"
 
 # Server Configuration
 HOST = os.getenv("OD_HOST", "127.0.0.1")
-PORT = int(os.getenv("OD_PORT", "8001"))
+PORT = int(os.getenv("OD_PORT", "8003"))
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
 # Spatial Grid Configuration (3x3)

@@ -246,54 +246,106 @@ async def ask_assistant(request: AssistantRequest):
             # Send face recognition response to TTS
             await _send_to_tts(response_text)
 
+        # elif intent == "OBJECT_DETECTION":
+        #     action_type = "vision"
+            
+        #     # Check if this is a start/stop command
+        #     query_lower = request.query.lower()
+            
+        #     detection_session = get_detection_session()
+            
+        #     if "start" in query_lower or "begin" in query_lower or "scanning" in query_lower:
+        #         # Start continuous object detection
+        #         session_id = f"od_{uuid.uuid4().hex[:8]}"
+        #         result = await detection_session.start_detection(session_id)
+                
+        #         if "error" in result:
+        #             response_text = result["error"]
+        #         else:
+        #             response_text = "Starting object detection. I'll tell you what I see every few seconds. Say 'stop object detection' when you're done."
+            
+        #     elif "stop" in query_lower or "end" in query_lower:
+        #         # Stop continuous object detection
+        #         result = await detection_session.stop_detection()
+                
+        #         if "error" in result:
+        #             response_text = result["error"]
+        #         else:
+        #             response_text = "Object detection stopped."
+            
+        #     else:
+        #         # Single-shot detection
+        #         # Auto-capture from Pi if no image provided
+        #         image_data = request.image_data
+        #         if not image_data:
+        #             image_data = await _capture_image_from_pi()
+        #             if not image_data:
+        #                 response_text = "I couldn't capture an image. Please try again or say 'start object detection' for continuous scanning."
+        #                 await _send_to_tts(response_text)
+        #                 return AssistantResponse(
+        #                     response_text=response_text,
+        #                     action_type=action_type,
+        #                     timestamp=datetime.utcnow(),
+        #                     navigation_data=None
+        #                 )
+                
+        #         # Detect objects in image
+        #         response_text = await vision_service.detect_objects(image_data)
+            
+        #     # Send object detection response to TTS (both continuous control and single-shot)
+        #     await _send_to_tts(response_text)
+
         elif intent == "OBJECT_DETECTION":
             action_type = "vision"
             
             # Check if this is a start/stop command
             query_lower = request.query.lower()
             
-            detection_session = get_detection_session()
+            # Import continuous detection service
+            from app.services.continuous_object_detection_service import get_continuous_detection_service
+            detection_service = get_continuous_detection_service()
             
-            if "start" in query_lower or "begin" in query_lower or "scanning" in query_lower:
-                # Start continuous object detection
-                session_id = f"od_{uuid.uuid4().hex[:8]}"
-                result = await detection_session.start_detection(session_id)
-                
-                if "error" in result:
-                    response_text = result["error"]
-                else:
-                    response_text = "Starting object detection. I'll tell you what I see every few seconds. Say 'stop object detection' when you're done."
-            
-            elif "stop" in query_lower or "end" in query_lower:
+            if "stop" in query_lower or "end" in query_lower:
                 # Stop continuous object detection
-                result = await detection_session.stop_detection()
+                result = await detection_service.stop_continuous_detection()
                 
-                if "error" in result:
-                    response_text = result["error"]
+                if result.get("success"):
+                    images_processed = result.get("images_processed", 0)
+                    response_text = f"Object detection stopped. I processed {images_processed} images."
                 else:
-                    response_text = "Object detection stopped."
+                    response_text = f"Failed to stop object detection: {result.get('error', 'Unknown error')}"
             
-            else:
-                # Single-shot detection
-                # Auto-capture from Pi if no image provided
-                image_data = request.image_data
-                if not image_data:
-                    image_data = await _capture_image_from_pi()
-                    if not image_data:
-                        response_text = "I couldn't capture an image. Please try again or say 'start object detection' for continuous scanning."
-                        await _send_to_tts(response_text)
-                        return AssistantResponse(
-                            response_text=response_text,
-                            action_type=action_type,
-                            timestamp=datetime.utcnow(),
-                            navigation_data=None
-                        )
+            elif "start" in query_lower or "begin" in query_lower or "scanning" in query_lower:
+                # Start continuous object detection
+                result = await detection_service.start_continuous_detection(interval_seconds=2.0)
                 
-                # Detect objects in image
-                response_text = await vision_service.detect_objects(image_data)
+                if result.get("success"):
+                    response_text = "Starting object detection. I'll tell you what I see every few seconds. Say 'stop object detection' when you're done."
+                else:
+                    response_text = f"Failed to start object detection: {result.get('error', 'Unknown error')}"
             
-            # Send object detection response to TTS (both continuous control and single-shot)
+            # else:
+            #     # Single-shot detection (capture one image and detect)
+            #     image_data = request.image_data
+            #     if not image_data:
+            #         image_data = await _capture_image_from_pi()
+            #         if not image_data:
+            #             response_text = "I couldn't capture an image. Please try again or say 'start object detection' for continuous scanning."
+            #             await _send_to_tts(response_text)
+            #             return AssistantResponse(
+            #                 response_text=response_text,
+            #                 action_type=action_type,
+            #                 timestamp=datetime.utcnow(),
+            #                 navigation_data=None
+            #             )
+                
+            #     # Use the detection service for single-shot too
+            #     result = await detection_service.process_image(image_data)
+            #     response_text = result.get("speech_text", "I couldn't detect any objects.")
+            
+            # Send response to TTS
             await _send_to_tts(response_text)
+
 
         elif intent == "TRANSLATION":
             action_type = "translation"

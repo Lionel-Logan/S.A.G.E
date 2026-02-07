@@ -1,6 +1,6 @@
 import spacy
 from typing import Tuple
-import google.generativeai as genai
+from google import genai
 from app.config import settings
 
 # Load the lightweight English model
@@ -10,11 +10,12 @@ except:
     print("Spacy model not found. Run: python -m spacy download en_core_web_sm")
     nlp = None
 
-# Configure Gemini for fallback classification
-genai.configure(api_key=settings.GEMINI_API_KEY, transport="rest")
-
 class IntentRouter:
     def __init__(self):
+        # Initialize Gemini client
+        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        self.model_name = 'gemini-2.0-flash-exp'
+        
         # 1. STRICT PHRASES (Multi-word triggers that are 100% certain)
         self.strict_rules = {
             "NAVIGATION": [
@@ -61,9 +62,6 @@ class IntentRouter:
             # "FACE_ENROLLMENT": ["enroll", "register", "remember", "save", "add"],  # Disabled
             "OBJECT_DETECTION": ["detect", "scan", "object", "item", "thing", "see", "describe"]
         }
-        
-        # Gemini model for fallback classification
-        self.gemini_model = genai.GenerativeModel('gemini-2.5-flash')
 
     def _classify_with_rules(self, text: str) -> Tuple[str, bool]:
         """
@@ -131,7 +129,10 @@ User query: "{text}"
 Response format: Return ONLY the category name, nothing else."""
 
         try:
-            response = self.gemini_model.generate_content(prompt)
+            response = await self.client.models.generate_content_async(
+                model=self.model_name,
+                contents=prompt
+            )
             intent = response.text.strip().upper()
             
             # Validate response

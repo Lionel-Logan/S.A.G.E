@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.api.v1 import  translation, faces, objects, assistant
+from app.api.v1 import  translation, faces, objects, assistant, camera
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -24,6 +24,7 @@ app.include_router(translation.router, prefix=settings.API_V1_PREFIX)
 app.include_router(faces.router, prefix=settings.API_V1_PREFIX)
 app.include_router(objects.router, prefix=settings.API_V1_PREFIX)
 app.include_router(assistant.router, prefix=settings.API_V1_PREFIX)
+app.include_router(camera.router, prefix=settings.API_V1_PREFIX)
 
 @app.get("/")
 async def root():

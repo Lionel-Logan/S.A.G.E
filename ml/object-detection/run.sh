@@ -24,8 +24,8 @@ fi
 # Start the server
 echo ""
 echo "Starting Object Detection Service..."
-echo "Server will be available at: http://127.0.0.1:8001"
-echo "API Documentation: http://127.0.0.1:8001/docs"
+echo "Server will be available at: http://127.0.0.1:8003"
+echo "API Documentation: http://127.0.0.1:8003/docs"
 echo ""
 
-python -m uvicorn src.main:app --host 127.0.0.1 --port 8001 --reload
+python -m uvicorn src.main:app --host 127.0.0.1 --port 8003 --reload

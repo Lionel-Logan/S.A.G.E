@@ -1,4 +1,4 @@
-import google.generativeai as genai
+from google import genai
 import os
 from dotenv import load_dotenv
 
@@ -11,15 +11,14 @@ if not api_key:
 else:
     print(f"✅ Key found: {api_key[:5]}...")
 
-    # 2. Connect to Google
-    genai.configure(api_key=api_key)
+    # 2. Create Gemini client
+    client = genai.Client(api_key=api_key)
 
     print("\n🔍 Asking Google for available models...")
     try:
-        # 3. List everything available to you
-        for m in genai.list_models():
-            # We only care about models that can generate text (generateContent)
-            if 'generateContent' in m.supported_generation_methods:
-                print(f"   - {m.name}")
+        # 3. List available models
+        models = client.models.list()
+        for model in models:
+            print(f"   - {model.name}")
     except Exception as e:
         print(f"❌ Error talking to Google: {e}")

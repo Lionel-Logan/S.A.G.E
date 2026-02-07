@@ -1,16 +1,14 @@
-import google.generativeai as genai
+from google import genai
 from app.config import settings
-from app.core.utils import decode_image # Make sure utils.py exists
+from app.core.utils import decode_image
 import PIL.Image
 import cv2
 
-# OLD LINE: genai.configure(api_key=settings.GEMINI_API_KEY)
-
-# NEW LINE: Force "rest" transport to stop the crashes
-genai.configure(api_key=settings.GEMINI_API_KEY, transport="rest")
 class GeminiService:
     def __init__(self):
-        self.model = genai.GenerativeModel('gemini-2.5-flash')
+        # Create client with API key
+        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        self.model_name = 'gemini-2.0-flash-exp'
         
         # System prompt defining S.A.G.E's personality and response style
         self.system_prompt = """You are S.A.G.E (Situational Awareness & Guidance Engine), an AI assistant for smartglasses.
@@ -53,7 +51,10 @@ User query: {query}
 Respond naturally and concisely."""
             
             # Using async generation
-            response = self.model.generate_content(prompt)
+            response = await self.client.models.generate_content_async(
+                model=self.model_name,
+                contents=prompt
+            )
             return response.text
         except Exception as e:
             # Print the actual error to the terminal so we can see it
@@ -88,7 +89,10 @@ User query: {prompt}
 
 Respond naturally and concisely."""
 
-            response = self.model.generate_content([enhanced_prompt, pil_image])
+            response = await self.client.models.generate_content_async(
+                model=self.model_name,
+                contents=[enhanced_prompt, pil_image]
+            )
             return response.text
         except Exception as e:
             return f"AI Vision Error: {str(e)}"

@@ -22,8 +22,16 @@ async def translate_image_text(
     """
     try:
         # Step 1: OCR
-        ocr_service = OCRService()
-        original_text = await ocr_service.extract_text(request.image_base64)
+        try:
+            ocr_service = OCRService()
+            original_text = await ocr_service.extract_text(request.image_base64)
+        except Exception as ocr_error:
+            # If OCR service fails (e.g., Google Cloud Vision not installed),
+            # return helpful error message
+            raise HTTPException(
+                503,
+                f"OCR service unavailable: {str(ocr_error)}. Install google-cloud-vision to enable this feature."
+            )
         
         if not original_text:
             raise HTTPException(400, "No text detected in image")

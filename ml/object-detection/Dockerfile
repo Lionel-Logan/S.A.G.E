@@ -22,11 +22,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Expose port
-EXPOSE 8001
+EXPOSE 8003
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8001/api/v1/objects/health')"
+    CMD python -c "import requests; requests.get('http://localhost:8003/api/v1/objects/health')"
 
 # Run application
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8003"]
