@@ -1,18 +1,33 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../config/backend_config.dart';
 import 'bluetooth_audio_service.dart';
 
 /// API Service for communicating with Pi Server and App Backend
 class ApiService {
+  // Development mode flag - set to true to use localhost without pairing
+  static const bool useDevelopmentBackend = true;  // Set to false for production
+  
   // Server URLs - dynamically resolved from settings
   static Future<String> getPiServerUrl() async {
     return await BluetoothAudioService.getPiServerUrl();
   }
   
   static Future<String> getBackendUrl() async {
-    final piUrl = await getPiServerUrl();
-    // Backend runs on port 8002 on same host as Pi server
-    return piUrl.replaceAll(':8001', ':8002');
+    // For development/testing: use localhost without requiring pairing
+    if (useDevelopmentBackend) {
+      return BackendConfig.getBackendUrl();
+    }
+    
+    // For production: derive from Pi server URL
+    try {
+      final piUrl = await getPiServerUrl();
+      // Backend runs on port 8002 on same host as Pi server
+      return piUrl.replaceAll(':8001', ':8002');
+    } catch (e) {
+      // Fallback to localhost if Pi server discovery fails
+      return BackendConfig.getBackendUrl();
+    }
   }
   
   // Timeout duration - increased for network requests
@@ -291,6 +306,97 @@ class ApiService {
       }
     } catch (e) {
       throw Exception('Error resetting camera settings: $e');
+    }
+  }
+  
+  // ============================================================================
+  // LOCATION TRACKING APIs (HTTP Fallback)
+  // ============================================================================
+  
+  /// Post single location update to backend (HTTP fallback)
+  static Future<Map<String, dynamic>> postLocationUpdate({
+    required double latitude,
+    required double longitude,
+    double? accuracy,
+    double? altitude,
+    double? speed,
+    double? heading,
+  }) async {
+    try {
+      final backendUrl = await getBackendUrl();
+      
+      // Create the JSON payload
+      final payload = {
+        'latitude': latitude,
+        'longitude': longitude,
+        'accuracy': accuracy,
+        'altitude': altitude,
+        'speed': speed,
+        'heading': heading,
+        'timestamp': DateTime.now().toUtc().toIso8601String(),
+      };
+      
+      // Log the exact JSON being sent
+      print('📤 [ApiService] Sending location payload:');
+      print('   URL: $backendUrl/location/update');
+      print('   JSON: ${json.encode(payload)}');
+      
+      final response = await http.post(
+        Uri.parse('$backendUrl/location/update'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(payload),
+      ).timeout(const Duration(seconds: 5));
+      
+      if (response.statusCode == 200) {
+        print('✅ [ApiService] Location sent successfully');
+        return json.decode(response.body);
+      } else {
+        print('❌ [ApiService] Failed with status: ${response.statusCode}');
+        throw Exception('Failed to update location: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ [ApiService] Error: $e');
+      throw Exception('Error posting location: $e');
+    }
+  }
+  
+  /// Post batch of location updates to backend
+  static Future<Map<String, dynamic>> postLocationBatch(
+    List<Map<String, dynamic>> locations
+  ) async {
+    try {
+      final backendUrl = await getBackendUrl();
+      final response = await http.post(
+        Uri.parse('$backendUrl/location/batch'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'locations': locations}),
+      ).timeout(const Duration(seconds: 10));
+      
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw Exception('Failed to post batch: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error posting batch: $e');
+    }
+  }
+  
+  /// Get current location from backend (if stored)
+  static Future<Map<String, dynamic>> getCurrentLocationFromBackend() async {
+    try {
+      final backendUrl = await getBackendUrl();
+      final response = await http.get(
+        Uri.parse('$backendUrl/location/current'),
+      ).timeout(const Duration(seconds: 5));
+      
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw Exception('Failed to get location: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error getting location: $e');
     }
   }
 }

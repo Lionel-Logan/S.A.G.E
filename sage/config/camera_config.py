@@ -46,7 +46,7 @@ STREAM_JPEG_QUALITY = 70                # Lower quality for faster streaming
 STREAM_FPS = 20                         # Target FPS for preview stream
 
 # Backend Communication
-BACKEND_BASE_URL = "http://localhost:8000"  # Update with actual backend IP
+BACKEND_BASE_URL = "http://10.43.164.29:8000"
 BACKEND_IMAGE_ENDPOINT = "/api/v1/camera/image"
 BACKEND_VIDEO_ENDPOINT = "/api/v1/camera/video"
 BACKEND_TIMEOUT = 30                    # Seconds to wait for backend response

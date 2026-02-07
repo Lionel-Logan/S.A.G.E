@@ -45,6 +45,10 @@ dependencies:
   wifi_iot: ^0.3.19  # WiFi hotspot management
   network_info_plus: ^5.0.1  # Network information
   connectivity_plus: ^6.0.5  # Network connectivity monitoring
+  
+  # Location tracking
+  geolocator: ^11.0.0  # GPS location services
+  web_socket_channel: ^2.4.0  # WebSocket for real-time communication
 
 dev_dependencies:
   flutter_test:
