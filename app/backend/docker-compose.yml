@@ -1,0 +1,23 @@
+version: "3"
+services:
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    container_name: libretranslate
+    restart: unless-stopped
+    ports:
+      - "5001:5000"
+    environment:
+      - LT_THREADS=4
+      - LT_DEBUG=false
+      - LT_SUGGESTIONS=false
+      - LT_UPDATE_MODELS=true
+    volumes:
+      - libretranslate-data:/app/db
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  libretranslate-data:

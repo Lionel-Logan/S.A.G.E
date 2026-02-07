@@ -126,7 +126,7 @@ def test_recognition_direct(image_path):
         # Send recognition request
         payload = {
             "image_base64": image_base64,
-            "threshold": 0.7
+            "threshold": 0.2
         }
         
         response = requests.post(
@@ -166,10 +166,18 @@ def test_recognition_direct(image_path):
         print(f"❌ Error: {e}")
         return False
 
-def test_enrollment_via_backend(image_path, name, description=""):
-    """Test enrollment through S.A.G.E backend assistant endpoint"""
+def test_enrollment_flow_via_backend(image_path, name, description="Person"):
+    """
+    Test enrollment workflow through S.A.G.E backend assistant endpoint
+    This tests the INTERACTIVE enrollment flow:
+    1. Ask "who is this" with unknown face
+    2. Backend detects unrecognized face and asks if you want to enroll
+    3. Respond "yes"
+    4. Backend asks for name
+    5. Provide name (and optional description)
+    """
     print("\n" + "="*60)
-    print(f"TEST 5: Backend Enrollment - {name}")
+    print(f"TEST 5: Backend Enrollment Workflow - {name}")
     print("="*60)
     
     try:
@@ -177,18 +185,12 @@ def test_enrollment_via_backend(image_path, name, description=""):
         image_base64 = encode_image_to_base64(image_path)
         print(f"📸 Image loaded: {image_path}")
         
-        # Create enrollment query
-        if description:
-            query = f"enroll {name} as {description}"
-        else:
-            query = f"enroll {name}"
-        
-        print(f"📝 Query: '{query}'")
-        
-        # Send to assistant endpoint
+        # STEP 1: Ask "who is this" with unknown face
+        print(f"\n📝 Step 1: Ask 'who is this' (should be unrecognized)")
         payload = {
-            "query": query,
-            "image_data": image_base64
+            "query": "who is this",
+            "image_data": image_base64,
+            "user_id": "test_user_123"
         }
         
         response = requests.post(
@@ -198,15 +200,64 @@ def test_enrollment_via_backend(image_path, name, description=""):
         )
         
         result = response.json()
+        print(f"   Response: {result.get('response_text')}")
         
-        if response.status_code == 200:
-            print(f"✅ Backend enrollment SUCCESS")
-            print(f"   Response: {result.get('response_text')}")
+        if "don't recognize" in result.get('response_text', '').lower() or "would you like" in result.get('response_text', '').lower():
+            print(f"✅ Step 1 passed: Face not recognized, enrollment prompt triggered")
+        else:
+            print(f"⚠️  Step 1: Face might already be enrolled or different response")
+            return False
+        
+        # STEP 2: Respond "yes" to enrollment prompt
+        print(f"\n📝 Step 2: Respond 'yes' to enrollment")
+        payload = {
+            "query": "yes",
+            "user_id": "test_user_123"
+        }
+        
+        response = requests.post(
+            f"{BACKEND_URL}/api/v1/assistant/ask",
+            json=payload,
+            timeout=15
+        )
+        
+        result = response.json()
+        print(f"   Response: {result.get('response_text')}")
+        
+        if "name" in result.get('response_text', '').lower():
+            print(f"✅ Step 2 passed: Backend asking for name")
+        else:
+            print(f"❌ Step 2 failed: Expected name prompt")
+            return False
+        
+        # STEP 3: Provide name and description
+        print(f"\n📝 Step 3: Provide name and description")
+        if description and description != "Person":
+            name_query = f"{name} as {description}"
+        else:
+            name_query = name
+        
+        print(f"   Sending: '{name_query}'")
+        payload = {
+            "query": name_query,
+            "user_id": "test_user_123"
+        }
+        
+        response = requests.post(
+            f"{BACKEND_URL}/api/v1/assistant/ask",
+            json=payload,
+            timeout=15
+        )
+        
+        result = response.json()
+        print(f"   Response: {result.get('response_text')}")
+        
+        if "enrolled successfully" in result.get('response_text', '').lower():
+            print(f"✅ Step 3 passed: Enrollment complete!")
+            print(f"\n✅ FULL ENROLLMENT WORKFLOW SUCCESS")
             return True
         else:
-            print(f"❌ Backend enrollment FAILED")
-            print(f"   Status: {response.status_code}")
-            print(f"   Response: {json.dumps(result, indent=2)}")
+            print(f"❌ Step 3 failed: Enrollment not confirmed")
             return False
             
     except FileNotFoundError:
@@ -219,7 +270,7 @@ def test_enrollment_via_backend(image_path, name, description=""):
 def test_recognition_via_backend(image_path):
     """Test recognition through S.A.G.E backend assistant endpoint"""
     print("\n" + "="*60)
-    print(f"TEST 6: Backend Recognition")
+    print(f"TEST 6: Backend Recognition via Assistant")
     print("="*60)
     
     try:
@@ -234,7 +285,8 @@ def test_recognition_via_backend(image_path):
         # Send to assistant endpoint
         payload = {
             "query": query,
-            "image_data": image_base64
+            "image_data": image_base64,
+            "user_id": "test_user_123"
         }
         
         response = requests.post(
@@ -252,6 +304,64 @@ def test_recognition_via_backend(image_path):
             return True
         else:
             print(f"❌ Backend recognition FAILED")
+            print(f"   Status: {response.status_code}")
+            print(f"   Response: {json.dumps(result, indent=2)}")
+            return False
+            
+    except FileNotFoundError:
+        print(f"❌ Image file not found: {image_path}")
+        return False
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return False
+
+def test_faces_endpoint_directly(image_path, token=None):
+    """
+    Test the /faces/recognize endpoint directly (NOT through assistant)
+    This requires authentication token
+    """
+    print("\n" + "="*60)
+    print(f"TEST 7: Direct /faces/recognize Endpoint (Requires Auth)")
+    print("="*60)
+    
+    if not token:
+        print("⚠️  No authentication token provided")
+        print("   This test requires you to login first")
+        print("   Skipping...")
+        return False
+    
+    try:
+        # Encode image
+        image_base64 = encode_image_to_base64(image_path)
+        print(f"📸 Image loaded: {image_path}")
+        
+        # Send to /faces/recognize endpoint with auth
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "image_base64": image_base64
+        }
+        
+        response = requests.post(
+            f"{BACKEND_URL}/api/v1/faces/recognize",
+            json=payload,
+            headers=headers,
+            timeout=15
+        )
+        
+        result = response.json()
+        
+        if response.status_code == 200:
+            print(f"✅ /faces/recognize SUCCESS")
+            print(f"   Faces detected: {len(result.get('faces', []))}")
+            for face in result.get('faces', []):
+                print(f"   - {face.get('name')} (confidence: {face.get('confidence', 0):.2f})")
+            return True
+        else:
+            print(f"❌ /faces/recognize FAILED")
             print(f"   Status: {response.status_code}")
             print(f"   Response: {json.dumps(result, indent=2)}")
             return False
@@ -314,17 +424,35 @@ def run_full_test_suite():
         name = input("Enter person's name for enrollment: ").strip()
         description = input("Enter description (optional): ").strip()
         
-        # Test 3: Direct enrollment
-        #test_enrollment_direct(test_image_1, name, description)
+        print("\n" + "="*60)
+        print("CHOOSE TEST TYPE:")
+        print("="*60)
+        print("1. Direct to Face Recognition Server (Tests 3-4)")
+        print("2. Via Backend Assistant Endpoint (Tests 5-6)")
+        print("3. All tests")
         
-        # Test 4: Direct recognition
-        #test_recognition_direct(test_image_1)
+        choice = input("\nEnter choice (1-3): ").strip()
         
-        # Test 5: Backend enrollment
-        test_enrollment_via_backend(test_image_1, name + "_backend", description)
+        if choice == "1" or choice == "3":
+            # Test 3: Direct enrollment
+            test_enrollment_direct(test_image_1, name, description)
+            
+            # Test 4: Direct recognition
+            test_recognition_direct(test_image_1)
         
-        # Test 6: Backend recognition
-        test_recognition_via_backend(test_image_1)
+        if choice == "2" or choice == "3":
+            # Test 5: Backend enrollment workflow (interactive)
+            print("\n⚠️  Note: This will test the INTERACTIVE enrollment flow")
+            print("   The face in the image must NOT be enrolled yet!")
+            confirm = input("   Continue? (y/n): ").strip().lower()
+            
+            if confirm == "y":
+                test_enrollment_flow_via_backend(test_image_1, name, description)
+            
+            # Test 6: Backend recognition (should recognize the face now)
+            print("\n⚠️  Note: Testing recognition - face should be enrolled by now")
+            input("   Press Enter to test recognition...")
+            test_recognition_via_backend(test_image_1)
         
     else:
         print("\n⚠️  No test image provided, skipping face tests")

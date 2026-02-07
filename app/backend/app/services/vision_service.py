@@ -17,7 +17,7 @@ class VisionService:
             
             # Call Nikhil's face recognition server
             client = FaceRecognitionClient()
-            result = await client.recognize_faces(base64_image, threshold=0.7)
+            result = await client.recognize_faces(base64_image, threshold=0.5)
             await client.close()
             
             # Parse results into voice-friendly format
@@ -80,7 +80,7 @@ class VisionService:
             
             # Call Nikhil's face enrollment server
             client = FaceRecognitionClient()
-            result = await client.enroll_face(name, base64_image, description, threshold=0.7)
+            result = await client.enroll_face(name, base64_image, description, threshold=0.5)
             await client.close()
             
             if result.get("success"):
