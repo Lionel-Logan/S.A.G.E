@@ -1198,6 +1198,21 @@ class _SettingsScreenState extends State<SettingsScreen>
           
           const SizedBox(height: 40),
           
+          // DEBUG & TESTING Section
+          _buildSectionHeader('DEBUG & TESTING', 'Testing tools and diagnostics'),
+          const SizedBox(height: 16),
+          _buildActionButton(
+            'Location Debug',
+            'Test GPS tracking and view location data format',
+            Icons.location_searching_rounded,
+            Colors.orange,
+            () {
+              widget.onNavigate('location_debug');
+            },
+          ),
+          
+          const SizedBox(height: 40),
+          
           // SERVICES Section
           _buildSectionHeader('SERVICES', 'Configure AI and processing services'),
           const SizedBox(height: 12),

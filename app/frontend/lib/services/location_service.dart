@@ -1,266 +1,343 @@
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:flutter/foundation.dart';
+import '../models/location_update.dart';
 import '../config/backend_config.dart';
 
-/// Service for managing location tracking using GPS
-/// Handles permissions, location stream, and accuracy settings
+/// Service for managing GPS location tracking
+/// Handles permission requests, location streaming, and smart mode switching
 class LocationService {
-  static StreamSubscription<Position>? _positionStream;
-  static StreamController<Position>? _positionController;
-  static bool _isTracking = false;
-  static Position? _lastPosition;
+  static final LocationService _instance = LocationService._internal();
+  factory LocationService() => _instance;
+  LocationService._internal();
 
-  /// Stream of GPS position updates
-  static Stream<Position>? get positionStream => _positionController?.stream;
+  // Stream controllers
+  final _locationStreamController = StreamController<LocationUpdate>.broadcast();
+  final _statusStreamController = StreamController<LocationServiceStatus>.broadcast();
 
-  /// Check if currently tracking location
-  static bool get isTracking => _isTracking;
+  // Internal state
+  StreamSubscription<Position>? _positionSubscription;
+  LocationUpdate? _lastLocation;
+  DateTime? _lastMovementTime;
+  bool _isTracking = false;
+  LocationTrackingMode _currentMode = LocationTrackingMode.moving;
 
-  /// Get the last known position
-  static Position? get lastPosition => _lastPosition;
-
-  // ============================================================================
-  // PERMISSION MANAGEMENT
-  // ============================================================================
-
-  /// Check if location permissions are granted
-  static Future<bool> hasPermission() async {
-    final permission = await Permission.location.status;
-    return permission.isGranted;
-  }
+  // Getters
+  Stream<LocationUpdate> get locationStream => _locationStreamController.stream;
+  Stream<LocationServiceStatus> get statusStream => _statusStreamController.stream;
+  bool get isTracking => _isTracking;
+  LocationTrackingMode get currentMode => _currentMode;
+  LocationUpdate? get lastLocation => _lastLocation;
 
   /// Request location permissions
-  static Future<bool> requestPermission() async {
-    debugPrint('🌍 [LocationService] Requesting location permission...');
-    final status = await Permission.location.request();
-    debugPrint(status.isGranted ? '✅ [LocationService] Permission granted' : '❌ [LocationService] Permission denied');
-    return status.isGranted;
-  }
-
-  /// Request background location permission (for continuous tracking)
-  static Future<bool> requestBackgroundPermission() async {
-    // First ensure we have regular location permission
-    if (!await hasPermission()) {
-      if (!await requestPermission()) {
-        return false;
-      }
+  /// Returns true if granted, false otherwise
+  Future<bool> requestLocationPermission() async {
+    print('📍 [LocationService] Requesting location permissions...');
+    
+    // Check current permission status
+    PermissionStatus status = await Permission.location.status;
+    
+    if (status.isGranted) {
+      print('✅ [LocationService] Location permission already granted');
+      return true;
     }
 
-    // Then request background location
-    final status = await Permission.locationAlways.request();
-    return status.isGranted;
+    // Request permission
+    status = await Permission.location.request();
+    
+    if (status.isGranted) {
+      print('✅ [LocationService] Location permission granted');
+      return true;
+    } else if (status.isPermanentlyDenied) {
+      print('❌ [LocationService] Location permission permanently denied');
+      // Open app settings
+      await openAppSettings();
+      return false;
+    } else {
+      print('❌ [LocationService] Location permission denied');
+      return false;
+    }
   }
 
-  /// Check location service status
-  static Future<bool> isLocationServiceEnabled() async {
-    return await Geolocator.isLocationServiceEnabled();
+  /// Request background location permission (Android 10+)
+  Future<bool> requestBackgroundLocationPermission() async {
+    print('📍 [LocationService] Requesting background location permission...');
+    
+    // First, ensure foreground permission is granted
+    final foregroundGranted = await requestLocationPermission();
+    if (!foregroundGranted) {
+      print('❌ [LocationService] Foreground permission not granted');
+      return false;
+    }
+
+    // Request background permission
+    PermissionStatus status = await Permission.locationAlways.status;
+    
+    if (status.isGranted) {
+      print('✅ [LocationService] Background location permission already granted');
+      return true;
+    }
+
+    status = await Permission.locationAlways.request();
+    
+    if (status.isGranted) {
+      print('✅ [LocationService] Background location permission granted');
+      return true;
+    } else {
+      print('⚠️ [LocationService] Background location permission denied');
+      // App can still track in foreground
+      return false;
+    }
   }
 
-  // ============================================================================
-  // LOCATION SETTINGS
-  // ============================================================================
-
-  /// Get location settings optimized for navigation
-  static LocationSettings getNavigationSettings() {
-    return const LocationSettings(
-      accuracy: LocationAccuracy.bestForNavigation,
-      distanceFilter: 0, // Get all updates for navigation
-      // No timeLimit - let it wait as long as needed for first position
-      // timeLimit will cause timeout errors on emulator/devices without GPS
-    );
+  /// Check if location services are enabled on device
+  Future<bool> isLocationServiceEnabled() async {
+    final enabled = await Geolocator.isLocationServiceEnabled();
+    if (!enabled) {
+      print('❌ [LocationService] Location services are disabled on device');
+    }
+    return enabled;
   }
 
-  /// Get location settings for normal tracking (battery-optimized)
-  static LocationSettings getNormalSettings() {
-    return LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: BackendConfig.minDistanceFilterMeters.toInt(),
-    );
-  }
-
-  /// Get location settings for idle mode (minimal battery)
-  static LocationSettings getIdleSettings() {
-    return const LocationSettings(
-      accuracy: LocationAccuracy.medium,
-      distanceFilter: 20, // Only update every 20 meters
-    );
-  }
-
-  // ============================================================================
-  // LOCATION TRACKING
-  // ============================================================================
-
-  /// Start tracking location with navigation-level accuracy
-  static Future<bool> startNavigationTracking() async {
-    return await _startTracking(getNavigationSettings());
-  }
-
-  /// Start tracking location with normal accuracy
-  static Future<bool> startNormalTracking() async {
-    return await _startTracking(getNormalSettings());
-  }
-
-  /// Start tracking location with idle mode settings
-  static Future<bool> startIdleTracking() async {
-    return await _startTracking(getIdleSettings());
-  }
-
-  /// Internal method to start tracking with specific settings
-  static Future<bool> _startTracking(LocationSettings settings) async {
+  /// Start location tracking
+  /// Automatically switches between moving and stationary modes
+  Future<void> startTracking({LocationTrackingMode initialMode = LocationTrackingMode.moving}) async {
     if (_isTracking) {
-      debugPrint('⚠️ [LocationService] Already tracking location');
-      return true;
+      print('⚠️ [LocationService] Already tracking location');
+      return;
     }
+
+    print('🚀 [LocationService] Starting location tracking (mode: ${initialMode.name})...');
 
     // Check permissions
-    if (!await hasPermission()) {
-      final granted = await requestPermission();
-      if (!granted) {
-        debugPrint('❌ [LocationService] Location permission denied');
-        return false;
-      }
+    final hasPermission = await requestLocationPermission();
+    if (!hasPermission) {
+      _updateStatus(LocationServiceStatus.permissionDenied);
+      throw Exception('Location permission not granted');
     }
 
-    // Check if location service is enabled
-    if (!await isLocationServiceEnabled()) {
-      debugPrint('❌ [LocationService] Location service is disabled');
-      return false;
+    // Check if location services are enabled
+    final serviceEnabled = await isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      _updateStatus(LocationServiceStatus.serviceDisabled);
+      throw Exception('Location services are disabled');
     }
 
-    try {
-      // Create stream controller
-      _positionController = StreamController<Position>.broadcast();
+    // Set initial mode
+    _currentMode = initialMode;
+    _isTracking = true;
+    _lastMovementTime = DateTime.now();
+    _updateStatus(LocationServiceStatus.active);
 
-      // Start listening to position stream
-      debugPrint('🎧 [LocationService] Setting up position stream listener...');
-      _positionStream = Geolocator.getPositionStream(
-        locationSettings: settings,
-      ).listen(
-        (Position position) {
-          print('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-          print('📍 [LocationService] GPS POSITION RECEIVED');
-          print('   Latitude:  ${position.latitude.toStringAsFixed(6)}');
-          print('   Longitude: ${position.longitude.toStringAsFixed(6)}');
-          print('   Accuracy:  ±${position.accuracy.toStringAsFixed(1)}m');
-          print('   Speed:     ${(position.speed * 3.6).toStringAsFixed(1)} km/h');
-          print('   Altitude:  ${position.altitude.toStringAsFixed(1)}m');
-          print('   Heading:   ${position.heading.toStringAsFixed(1)}°');
-          print('   Timestamp: ${position.timestamp}');
-          print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-          
-          _lastPosition = position;
-          _positionController?.add(position);
-        },
-        onError: (error) {
-          print('❌ [LocationService] Stream error: $error');
-        },
-      );
+    // Get location settings based on mode
+    final settings = _getLocationSettings(_currentMode);
 
-      _isTracking = true;
-      debugPrint('✅ [LocationService] Tracking started (accuracy: ${settings.accuracy}, filter: ${settings.distanceFilter}m)');
-      return true;
-    } catch (e) {
-      debugPrint('❌ [LocationService] Error starting tracking: $e');
-      return false;
-    }
-  }
-
-  /// Stop tracking location
-  static Future<void> stopTracking() async {
-    if (!_isTracking) return;
-
-    await _positionStream?.cancel();
-    await _positionController?.close();
-    _positionStream = null;
-    _positionController = null;
-    _isTracking = false;
-
-    debugPrint('🛑 [LocationService] Tracking stopped');
-  }
-
-  // ============================================================================
-  // ONE-TIME LOCATION QUERY
-  // ============================================================================
-
-  /// Get current location once (no streaming)
-  static Future<Position?> getCurrentLocation({
-    LocationAccuracy accuracy = LocationAccuracy.high,
-  }) async {
-    // Check permissions
-    if (!await hasPermission()) {
-      final granted = await requestPermission();
-      if (!granted) {
-        debugPrint('❌ [LocationService] Permission denied for getCurrentLocation');
-        return null;
-      }
-    }
-
-    // Check if location service is enabled
-    if (!await isLocationServiceEnabled()) {
-      debugPrint('❌ [LocationService] Location service disabled for getCurrentLocation');
-      return null;
-    }
-
-    try {
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: accuracy,
-        timeLimit: const Duration(seconds: 10),
-      );
-
-      _lastPosition = position;
-      debugPrint('📍 [LocationService] Current location: (${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}) ±${position.accuracy.toStringAsFixed(1)}m');
-      return position;
-    } catch (e) {
-      debugPrint('❌ [LocationService] Error getting current location: $e');
-      return null;
-    }
-  }
-
-  // ============================================================================
-  // UTILITY METHODS
-  // ============================================================================
-
-  /// Calculate distance between two positions (in meters)
-  static double calculateDistance(
-    double lat1,
-    double lon1,
-    double lat2,
-    double lon2,
-  ) {
-    return Geolocator.distanceBetween(lat1, lon1, lat2, lon2);
-  }
-
-  /// Check if position has acceptable accuracy
-  static bool isAccuracyAcceptable(Position position) {
-    return position.accuracy <= BackendConfig.minAccuracyMeters;
-  }
-
-  /// Check if position represents stationary user
-  static bool isStationary(Position current, Position? previous) {
-    if (previous == null) return false;
-
-    final distance = Geolocator.distanceBetween(
-      previous.latitude,
-      previous.longitude,
-      current.latitude,
-      current.longitude,
+    // Start listening to position stream
+    _positionSubscription = Geolocator.getPositionStream(
+      locationSettings: settings,
+    ).listen(
+      _onPositionUpdate,
+      onError: _onPositionError,
+      cancelOnError: false,
     );
 
-    final speed = current.speed;
-
-    return distance < BackendConfig.stationaryDistanceThreshold &&
-        speed < BackendConfig.stationarySpeedThreshold;
+    print('✅ [LocationService] Location tracking started');
   }
 
-  /// Open location settings on device
-  static Future<void> openLocationSettings() async {
-    await Geolocator.openLocationSettings();
+  /// Stop location tracking
+  Future<void> stopTracking() async {
+    if (!_isTracking) {
+      print('⚠️ [LocationService] Location tracking not active');
+      return;
+    }
+
+    print('🛑 [LocationService] Stopping location tracking...');
+
+    await _positionSubscription?.cancel();
+    _positionSubscription = null;
+    _isTracking = false;
+    _updateStatus(LocationServiceStatus.stopped);
+
+    print('✅ [LocationService] Location tracking stopped');
   }
 
-  /// Open app settings
-  static Future<void> openAppSettings() async {
-    await Geolocator.openAppSettings();
+  /// Handle incoming position updates
+  void _onPositionUpdate(Position position) {
+    final location = LocationUpdate(
+      latitude: position.latitude,
+      longitude: position.longitude,
+      accuracy: position.accuracy,
+      altitude: position.altitude,
+      speed: position.speed,
+      heading: position.heading,
+      timestamp: position.timestamp ?? DateTime.now(),
+    );
+
+    // Validate location accuracy
+    if (!location.isValid(BackendConfig.minAccuracyMeters)) {
+      print('⚠️ [LocationService] Location filtered (poor accuracy: ${location.accuracy}m)');
+      return;
+    }
+
+    // Detect movement and switch modes if needed
+    _analyzeMovement(location);
+
+    // Update last location
+    _lastLocation = location;
+
+    // Emit location update
+    _locationStreamController.add(location);
+
+    // Detailed debug logging
+    if (BackendConfig.debugMode) {
+      print('\n╔═══════════════════════════════════════════════════════════╗');
+      print('║ 📍 LOCATION UPDATE                                        ║');
+      print('╠═══════════════════════════════════════════════════════════╣');
+      print('║ Latitude:  ${location.latitude.toStringAsFixed(8).padRight(40)}║');
+      print('║ Longitude: ${location.longitude.toStringAsFixed(8).padRight(40)}║');
+      print('║ Accuracy:  ${(location.accuracy?.toStringAsFixed(1) ?? 'N/A').padRight(40)}m║');
+      print('║ Speed:     ${(location.speed?.toStringAsFixed(2) ?? 'N/A').padRight(40)}m/s║');
+      print('║ Heading:   ${(location.heading?.toStringAsFixed(1) ?? 'N/A').padRight(40)}°║');
+      print('║ Altitude:  ${(location.altitude?.toStringAsFixed(1) ?? 'N/A').padRight(40)}m║');
+      print('║ Mode:      ${_currentMode.name.toUpperCase().padRight(40)}║');
+      print('╚═══════════════════════════════════════════════════════════╝\n');
+    } else {
+      print('📍 [LocationService] Location update: ${location.latitude.toStringAsFixed(6)}, '
+          '${location.longitude.toStringAsFixed(6)} '
+          '(accuracy: ${location.accuracy?.toStringAsFixed(1)}m, '
+          'speed: ${location.speed?.toStringAsFixed(1)}m/s, '
+          'mode: ${_currentMode.name})');
+    }
   }
+
+  /// Analyze movement and switch tracking modes
+  void _analyzeMovement(LocationUpdate newLocation) {
+    final speed = newLocation.speed ?? 0.0;
+    final now = DateTime.now();
+
+    // Check if user is stationary or moving
+    final isStationary = speed < BackendConfig.stationarySpeedThreshold;
+
+    if (isStationary) {
+      // User is stationary
+      if (_currentMode == LocationTrackingMode.moving) {
+        // Check if stationary for long enough to switch modes
+        final timeSinceLastMovement = now.difference(_lastMovementTime ?? now).inSeconds;
+        
+        if (timeSinceLastMovement >= BackendConfig.stationaryDetectionDelaySeconds) {
+          print('🔄 [LocationService] Switching to STATIONARY mode (battery saver)');
+          _switchMode(LocationTrackingMode.stationary);
+        }
+      }
+    } else {
+      // User is moving
+      _lastMovementTime = now;
+      
+      if (_currentMode == LocationTrackingMode.stationary) {
+        print('🔄 [LocationService] Switching to MOVING mode (high accuracy)');
+        _switchMode(LocationTrackingMode.moving);
+      }
+    }
+  }
+
+  /// Switch tracking mode (moving ↔ stationary)
+  void _switchMode(LocationTrackingMode newMode) {
+    if (_currentMode == newMode || !_isTracking) return;
+
+    _currentMode = newMode;
+    
+    // Restart position stream with new settings
+    _positionSubscription?.cancel();
+    
+    final settings = _getLocationSettings(newMode);
+    _positionSubscription = Geolocator.getPositionStream(
+      locationSettings: settings,
+    ).listen(
+      _onPositionUpdate,
+      onError: _onPositionError,
+      cancelOnError: false,
+    );
+
+    _updateStatus(LocationServiceStatus.modeChanged);
+  }
+
+  /// Get location settings based on tracking mode
+  LocationSettings _getLocationSettings(LocationTrackingMode mode) {
+    switch (mode) {
+      case LocationTrackingMode.moving:
+        // High accuracy, frequent updates (Google Maps level)
+        return const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 5, // meters (from BackendConfig.movingModeDistanceFilterMeters)
+          timeLimit: Duration(seconds: 3), // seconds (from BackendConfig.movingModeUpdateIntervalSeconds)
+        );
+      
+      case LocationTrackingMode.stationary:
+        // Reduced frequency for battery saving
+        return const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          distanceFilter: 20, // meters (from BackendConfig.stationaryModeDistanceFilterMeters)
+          timeLimit: Duration(seconds: 20), // seconds (from BackendConfig.stationaryModeUpdateIntervalSeconds)
+        );
+    }
+  }
+
+  /// Handle position stream errors
+  void _onPositionError(dynamic error) {
+    print('❌ [LocationService] Position stream error: $error');
+    _updateStatus(LocationServiceStatus.error);
+  }
+
+  /// Update service status
+  void _updateStatus(LocationServiceStatus status) {
+    _statusStreamController.add(status);
+  }
+
+  /// Get current position once (no streaming)
+  Future<LocationUpdate?> getCurrentPosition() async {
+    try {
+      final hasPermission = await requestLocationPermission();
+      if (!hasPermission) return null;
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      return LocationUpdate(
+        latitude: position.latitude,
+        longitude: position.longitude,
+        accuracy: position.accuracy,
+        altitude: position.altitude,
+        speed: position.speed,
+        heading: position.heading,
+        timestamp: position.timestamp ?? DateTime.now(),
+      );
+    } catch (e) {
+      print('❌ [LocationService] Error getting current position: $e');
+      return null;
+    }
+  }
+
+  /// Dispose resources
+  void dispose() {
+    _positionSubscription?.cancel();
+    _locationStreamController.close();
+    _statusStreamController.close();
+  }
+}
+
+/// Location tracking modes
+enum LocationTrackingMode {
+  moving,      // High frequency, high accuracy (active navigation)
+  stationary,  // Low frequency, battery saver
+}
+
+/// Location service status
+enum LocationServiceStatus {
+  stopped,
+  active,
+  permissionDenied,
+  serviceDisabled,
+  modeChanged,
+  error,
 }

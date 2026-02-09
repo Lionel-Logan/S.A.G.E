@@ -1,73 +1,119 @@
 /// Backend Configuration for S.A.G.E
 /// 
-/// Contains configuration for the FastAPI backend server
-/// and location tracking settings
+/// Contains configuration for the FastAPI backend server,
+/// WebSocket connections, and location tracking settings
 
 class BackendConfig {
+  // ============================================================================
+  // DEBUG MODE
+  // ============================================================================
+  
+  /// Enable debug mode for detailed logging and testing without backend
+  /// Set to true to log all location updates and WebSocket messages to console
+  static const bool debugMode = true;
+  
+  /// Mock WebSocket connection when backend is not available (for testing)
+  static const bool mockWebSocketWhenOffline = true;
+  
   // ============================================================================
   // BACKEND SERVER URLs
   // ============================================================================
   
   /// Development/Local backend URL
-  /// The FastAPI backend runs on port 8002 (separate from Pi server on 8001)
-  static const String localhostUrl = 'http://localhost:8002';
+  /// The FastAPI backend runs on port 8000
+  static const String localhostUrl = 'http://localhost:8000';
   
   /// Android emulator needs to use 10.0.2.2 instead of localhost
-  static const String localhostAndroidEmulatorUrl = 'http://10.0.2.2:8002';
+  static const String localhostAndroidEmulatorUrl = 'http://10.0.2.2:8000';
   
   /// Production backend URL (update when deployed)
   static const String productionUrl = 'http://your-backend-url.com';
   
   // ============================================================================
-  // API ENDPOINTS
+  // WEBSOCKET CONFIGURATION
   // ============================================================================
   
-  /// Location endpoints (to be implemented by backend team)
-  static const String locationUpdateEndpoint = '/api/v1/location/update';
-  static const String locationBatchEndpoint = '/api/v1/location/batch';
-  static const String locationWebSocketEndpoint = '/api/v1/location/stream';
+  /// WebSocket endpoint for live location streaming
+  /// Backend team will implement: ws://backend/ws/location/{device_id}
+  static const String websocketPath = '/ws/location';
+  
+  /// WebSocket reconnection settings
+  static const int websocketMaxReconnectAttempts = 3;
+  static const int websocketReconnectDelaySeconds = 5;
+  static const int websocketReconnectMaxDelaySeconds = 60; // Max exponential backoff
+  
+  /// WebSocket heartbeat/ping interval (seconds)
+  static const int websocketPingIntervalSeconds = 30;
+  
+  /// WebSocket timeout - consider backend unreachable after this duration
+  static const int websocketTimeoutSeconds = 300; // 5 minutes
   
   // ============================================================================
-  // LOCATION TRACKING SETTINGS
+  // LOCATION TRACKING CONFIGURATION
   // ============================================================================
   
-  /// How often to send location updates during navigation (in seconds)
-  static const int navigationUpdateIntervalSeconds = 1;
+  /// Moving Mode (Active Navigation) - Google Maps level accuracy
+  /// Update every 3 seconds OR 5 meters, whichever comes first
+  static const int movingModeUpdateIntervalSeconds = 3;
+  static const double movingModeDistanceFilterMeters = 5.0;
   
-  /// Minimum distance change to trigger update (in meters)
-  /// Set to 0 for time-based updates only
-  static const double minDistanceFilterMeters = 0.0;
+  /// Stationary Mode (Battery Saver)
+  /// Reduced frequency when user is not moving
+  static const int stationaryModeUpdateIntervalSeconds = 20;
+  static const double stationaryModeDistanceFilterMeters = 20.0;
   
-  /// Maximum number of location updates to batch before sending
-  static const int maxBatchSize = 10;
+  /// Speed threshold to detect stationary vs moving (meters/second)
+  /// 0.5 m/s = 1.8 km/h (slower than slow walking)
+  static const double stationarySpeedThreshold = 0.5;
   
-  /// Maximum time to wait before sending a batch (in seconds)
-  static const int maxBatchWaitSeconds = 5;
-  
-  /// Maximum number of retry attempts for failed requests
-  static const int maxRetryAttempts = 3;
-  
-  /// Delay between retry attempts (in seconds)
-  static const int retryDelaySeconds = 2;
-  
-  /// Request timeout for HTTP requests (in seconds)
-  static const int requestTimeoutSeconds = 5;
-  
-  /// WebSocket reconnect delay (in seconds)
-  static const int websocketReconnectDelaySeconds = 2;
-  
-  // ============================================================================
-  // LOCATION ACCURACY SETTINGS
-  // ============================================================================
+  /// Time to wait before switching to stationary mode (seconds)
+  static const int stationaryDetectionDelaySeconds = 30;
   
   /// Minimum acceptable location accuracy (in meters)
   /// Updates with accuracy worse than this will be filtered out
   static const double minAccuracyMeters = 50.0;
   
-  /// Skip updates when stationary (distance < threshold and speed low)
-  static const bool skipStationaryUpdates = true;
-  static const double stationaryDistanceThreshold = 2.0; // meters
-  static const double stationarySpeedThreshold = 0.5; // m/s
+  // ============================================================================
+  // LOCATION QUEUE CONFIGURATION
+  // ============================================================================
+  
+  /// Maximum number of location updates to queue when WebSocket is disconnected
+  /// Prevents memory overflow during extended disconnections
+  static const int maxQueuedLocationUpdates = 50;
+  
+  /// Whether to batch-send queued updates or send one-by-one
+  static const bool batchSendQueuedUpdates = true;
+  
+  /// Batch size for sending queued updates
+  static const int queuedUpdatesBatchSize = 10;
+  
+  // ============================================================================
+  // BACKGROUND SERVICE CONFIGURATION
+  // ============================================================================
+  
+  /// Notification title for background location tracking
+  static const String backgroundNotificationTitle = 'Navigation started by S.A.G.E';
+  
+  /// Notification message
+  static const String backgroundNotificationMessage = 'Sharing live location with backend';
+  
+  /// Notification channel ID (Android)
+  static const String notificationChannelId = 'sage_location_tracking';
+  
+  /// Notification channel name
+  static const String notificationChannelName = 'Location Tracking';
+  
+  /// Notification ID
+  static const int notificationId = 1001;
+  
+  // ============================================================================
+  // API ENDPOINTS
+  // ============================================================================
+  
+  /// Location REST API endpoints (HTTP fallback if WebSocket fails)
+  static const String locationUpdateEndpoint = '/api/v1/location/update';
+  static const String locationBatchEndpoint = '/api/v1/location/batch';
+  static const String locationCurrentEndpoint = '/api/v1/location/current';
   
   // ============================================================================
   // HELPER METHODS
@@ -84,7 +130,15 @@ class BackendConfig {
   }
   
   /// Get WebSocket URL from HTTP URL
-  static String getWebSocketUrl(String httpUrl) {
-    return httpUrl.replaceFirst('http', 'ws');
+  static String getWebSocketUrl(String httpUrl, String deviceId) {
+    // Convert http:// to ws://
+    final wsUrl = httpUrl.replaceFirst('http', 'ws');
+    return '$wsUrl$websocketPath/$deviceId';
+  }
+  
+  /// Get full WebSocket URL for the device
+  static String getDeviceWebSocketUrl(String deviceId, {bool isEmulator = false}) {
+    final baseUrl = getBackendUrl(isEmulator: isEmulator);
+    return getWebSocketUrl(baseUrl, deviceId);
   }
 }

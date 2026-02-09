@@ -32,9 +32,8 @@ VOSK_MODEL_PATH = "/home/sage/vosk-model-small-en-us-0.15"  # Download from http
 VOSK_MODEL_URL = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"  # Auto-download if missing
 
 # Backend API Configuration
-BACKEND_API_URL = "http://10.43.164.29:8000/api/v1/assistant/ask"  # Mobile app backend endpoint
-# BACKEND_API_URL = "http://192.168.1.100:8000/api/v1/assistant/ask"  # Update with actual backend IP
-BACKEND_TIMEOUT = 10  # Seconds to wait for backend response
+BACKEND_API_URL = "http://192.168.1.12:8000/api/v1/assistant/ask"  # Mobile app backend endpoint
+BACKEND_TIMEOUT = 30  # Seconds to wait for backend response
 BACKEND_RETRY_ATTEMPTS = 2  # Number of retry attempts if backend fails
 
 # Logging Configuration

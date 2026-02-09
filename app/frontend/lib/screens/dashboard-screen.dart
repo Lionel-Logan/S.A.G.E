@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import '../models/glass-status.dart';
 import '../theme/app-theme.dart';
 import '../widgets/sidebar.dart';
@@ -8,7 +7,6 @@ import '../widgets/quick-access-card.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
 import '../services/bluetooth_service.dart';
-import '../services/location_manager.dart';
 import 'dart:async';
 
 class DashboardScreen extends StatefulWidget {
@@ -102,26 +100,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     _connectivityCheckTimer = Timer.periodic(Duration(seconds: 3), (timer) {
       _checkBLEConnectivity();
     });
-    
-    // 🚀 AUTO-START LOCATION TRACKING
-    _autoStartLocationTracking();
-  }
-  
-  /// Auto-start location tracking automatically on dashboard load
-  Future<void> _autoStartLocationTracking() async {
-    // Give the UI a moment to render first
-    await Future.delayed(const Duration(milliseconds: 500));
-    
-    if (!mounted) return;
-    
-    debugPrint('🚀 [Dashboard] Starting location tracking...');
-    final started = await LocationManager.startNavigationMode();
-    
-    if (started) {
-      debugPrint('✅ [Dashboard] Location tracking started');
-    } else {
-      debugPrint('⚠️ [Dashboard] Failed to start location tracking');
-    }
   }
   
   Future<void> _checkPiConnection() async {

@@ -47,8 +47,13 @@ dependencies:
   connectivity_plus: ^6.0.5  # Network connectivity monitoring
   
   # Location tracking
-  geolocator: ^11.0.0  # GPS location services
-  web_socket_channel: ^2.4.0  # WebSocket for real-time communication
+  geolocator: ^11.0.0  # GPS location tracking
+  
+  # WebSocket communication
+  web_socket_channel: ^2.4.0  # WebSocket client
+  
+  # Background execution
+  flutter_foreground_task: ^6.1.0  # Foreground service for Android
 
 dev_dependencies:
   flutter_test:
