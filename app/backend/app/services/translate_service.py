@@ -35,13 +35,13 @@ class TranslateService:
         }
         return lang_map.get(lang_code.lower(), lang_code)
 
-    async def translate_text(self, text: str, target_lang: str = "es") -> str:
+    async def translate_text(self, text: str, target_lang: str = "en") -> str:
         """
-        Translate plain text using LibreTranslate
+        Translate plain text using LibreTranslate (Always to English)
         
         Args:
             text: Text to translate
-            target_lang: Target language code (default: Spanish)
+            target_lang: Target language code (should always be "en")
             
         Returns:
             Voice-friendly translation result
@@ -54,27 +54,27 @@ class TranslateService:
             translated = await self.translator.translate(text, target_lang, source_lang)
             
             # Voice-friendly output
-            if source_lang == target_lang:
-                return f"That's already in {self._get_language_name(target_lang)}."
+            if source_lang == "en":
+                return f"That's already in English. It says: {text}"
             
-            return translated
+            return f"That says: {translated}"
             
         except Exception as e:
             print(f"Translation error: {e}")
             return f"Translation failed: {str(e)}"
 
-    async def translate_image(self, image_data: str, target_lang: str = "es") -> str:
+    async def translate_image(self, image_data: str, target_lang: str = "en") -> str:
         """
-        Hybrid Pipeline for image translation:
+        Hybrid Pipeline for image translation (Always to English):
         1. Use Gemini to extract text from image (OCR)
-        2. Use LibreTranslate to translate the extracted text
+        2. Use LibreTranslate to translate the extracted text to English
         
         Args:
             image_data: Base64 encoded image
-            target_lang: Target language code (default: Spanish)
+            target_lang: Target language code (should always be "en")
             
         Returns:
-            Voice-friendly format with original and translation
+            Voice-friendly format with English translation
         """
         try:
             # Step 1: OCR using Gemini
@@ -94,14 +94,14 @@ class TranslateService:
             # Step 2: Detect source language
             source_lang = await self.translator.detect_language(extracted_text)
             
-            # Step 3: Translate using LibreTranslate
-            if source_lang == target_lang:
-                return f"The text says: {extracted_text}. It's already in {self._get_language_name(target_lang)}."
+            # Step 3: Translate to English
+            if source_lang == "en":
+                return f"The text says: {extracted_text}"
             
             translated_text = await self.translator.translate(extracted_text, target_lang, source_lang)
             
-            # Voice-friendly output format
-            return f"Original text: {extracted_text}. In {self._get_language_name(target_lang)}: {translated_text}."
+            # Voice-friendly output format (always English)
+            return f"The text says: {translated_text}"
             
         except Exception as e:
             print(f"Image translation error: {e}")
