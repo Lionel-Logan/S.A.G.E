@@ -1,6 +1,6 @@
 import spacy
 from typing import Tuple
-from google import genai
+import google.generativeai as genai
 from app.config import settings
 
 # Load the lightweight English model
@@ -12,9 +12,10 @@ except:
 
 class IntentRouter:
     def __init__(self):
-        # Initialize Gemini client
-        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        self.model_name = 'gemini-2.0-flash-exp'
+        # Initialize Gemini
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        self.model_name = 'models/gemini-2.0-flash'
+        self.model = genai.GenerativeModel(self.model_name)
         
         # 1. STRICT PHRASES (Multi-word triggers that are 100% certain)
         self.strict_rules = {
@@ -129,10 +130,7 @@ User query: "{text}"
 Response format: Return ONLY the category name, nothing else."""
 
         try:
-            response = await self.client.models.generate_content_async(
-                model=self.model_name,
-                contents=prompt
-            )
+            response = await self.model.generate_content_async(prompt)
             intent = response.text.strip().upper()
             
             # Validate response

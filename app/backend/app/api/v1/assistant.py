@@ -350,41 +350,20 @@ async def ask_assistant(request: AssistantRequest):
         elif intent == "TRANSLATION":
             action_type = "translation"
             
-            # Extract target language from query (default to Spanish if not specified)
-            query_lower = request.query.lower()
-            
-            # Simple language extraction: "translate to spanish", "translate this to french"
-            target_lang = "es"  # Default: Spanish
-            
-            if "spanish" in query_lower or "español" in query_lower:
-                target_lang = "es"
-            elif "french" in query_lower or "français" in query_lower:
-                target_lang = "fr"
-            elif "german" in query_lower or "deutsch" in query_lower:
-                target_lang = "de"
-            elif "hindi" in query_lower:
-                target_lang = "hi"
-            elif "chinese" in query_lower or "mandarin" in query_lower:
-                target_lang = "zh"
-            elif "japanese" in query_lower:
-                target_lang = "ja"
-            elif "arabic" in query_lower:
-                target_lang = "ar"
-            elif "portuguese" in query_lower:
-                target_lang = "pt"
-            elif "russian" in query_lower:
-                target_lang = "ru"
-            elif "italian" in query_lower:
-                target_lang = "it"
-            elif "korean" in query_lower:
-                target_lang = "ko"
+            # ALWAYS translate to English (TTS can only read English properly)
+            target_lang = "en"
             
             if request.image_data:
                 # Image translation: Gemini OCR → LibreTranslate
                 response_text = await translate_service.translate_image(request.image_data, target_lang)
             else:
                 # Text translation: LibreTranslate only
-                clean_query = request.query.replace("translate", "").replace("to spanish", "").replace("to french", "").replace("to german", "").strip()
+                # Extract text to translate by removing common translation command patterns
+                clean_query = request.query
+                clean_query = clean_query.replace("translate this:", "").replace("translate this", "")
+                clean_query = clean_query.replace("translate:", "").replace("translate", "")
+                clean_query = clean_query.replace("this:", "").replace("this", "")
+                clean_query = clean_query.strip()
                 response_text = await translate_service.translate_text(clean_query, target_lang)
             
             # Send translation response to TTS

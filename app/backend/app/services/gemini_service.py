@@ -1,4 +1,4 @@
-from google import genai
+import google.generativeai as genai
 from app.config import settings
 from app.core.utils import decode_image
 import PIL.Image
@@ -6,9 +6,10 @@ import cv2
 
 class GeminiService:
     def __init__(self):
-        # Create client with API key
-        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        self.model_name = 'gemini-2.0-flash-exp'
+        # Configure Gemini with API key
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        self.model_name = 'models/gemini-2.0-flash'
+        self.model = genai.GenerativeModel(self.model_name)
         
         # System prompt defining S.A.G.E's personality and response style
         self.system_prompt = """You are S.A.G.E (Situational Awareness & Guidance Engine), an AI assistant for smartglasses.
@@ -51,10 +52,7 @@ User query: {query}
 Respond naturally and concisely."""
             
             # Using async generation
-            response = await self.client.models.generate_content_async(
-                model=self.model_name,
-                contents=prompt
-            )
+            response = await self.model.generate_content_async(prompt)
             return response.text
         except Exception as e:
             # Print the actual error to the terminal so we can see it
@@ -89,10 +87,7 @@ User query: {prompt}
 
 Respond naturally and concisely."""
 
-            response = await self.client.models.generate_content_async(
-                model=self.model_name,
-                contents=[enhanced_prompt, pil_image]
-            )
+            response = await self.model.generate_content_async([enhanced_prompt, pil_image])
             return response.text
         except Exception as e:
             return f"AI Vision Error: {str(e)}"

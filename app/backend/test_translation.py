@@ -6,11 +6,11 @@ def test_text_translation():
     """Test 1: Ask it to translate text (Should use LibreTranslate)"""
     print("\n--- TEST 1: TEXT TRANSLATION ---")
     payload = {
-        "query": "translate Hello, how are you?",
+        "query": "translate this: مرحبا، كيف حالك؟",  # Arabic: Hello, how are you?
         "user_id": "test_user"
     }
     try:
-        response = requests.post(f"{BASE_URL}/assistant/ask", json=payload)
+        response = requests.post(f"{BASE_URL}/api/v1/assistant/ask", json=payload)
         data = response.json()
         # DEBUG: Print whatever the server sent back
         print(f"👉 Server Status: {response.status_code}")
@@ -39,7 +39,7 @@ def test_image_translation():
         "user_id": "test_user"
     }
     try:
-        response = requests.post(f"{BASE_URL}/assistant/ask", json=payload)
+        response = requests.post(f"{BASE_URL}/api/v1/assistant/ask", json=payload)
         data = response.json()
         print(f"👉 Input: [IMAGE DATA]")
         print(f"✅ Response: {data['response_text']}")
