@@ -137,38 +137,33 @@ class ContinuousObjectDetectionService:
                 
                 if response.status_code == 200:
                     result = response.json()
-                    objects = result.get("objects", [])
+                    detected_objects = result.get("detected_objects", [])
                     
                     # Increment counter
                     self.detection_count += 1
                     
-                    # Format detection results for TTS
-                    if objects:
-                        # Create natural language output
-                        object_names = [obj.get("label", obj.get("class_name", "unknown")) for obj in objects]
+                    # Extract position descriptions from ML model output and send to TTS
+                    # The ML model provides pre-formatted position descriptions like "person in the center"
+                    # which are more accurate and contextual than counting object labels
+                    if detected_objects:
+                        # Extract position descriptions from all detected objects
+                        position_descriptions = [
+                            obj.get("position_description", "") 
+                            for obj in detected_objects 
+                            if obj.get("position_description")
+                        ]
                         
-                        # Count occurrences
-                        object_counts = {}
-                        for name in object_names:
-                            object_counts[name] = object_counts.get(name, 0) + 1
-                        
-                        # Build speech text
-                        if len(object_counts) == 1 and list(object_counts.values())[0] == 1:
-                            speech_text = f"I see a {list(object_counts.keys())[0]}."
-                        else:
-                            items = []
-                            for obj_name, count in object_counts.items():
-                                if count > 1:
-                                    items.append(f"{count} {obj_name}s")
-                                else:
-                                    items.append(f"a {obj_name}")
-                            
-                            if len(items) == 1:
-                                speech_text = f"I see {items[0]}."
-                            elif len(items) == 2:
-                                speech_text = f"I see {items[0]} and {items[1]}."
+                        if position_descriptions:
+                            # Combine all position descriptions for natural speech
+                            if len(position_descriptions) == 1:
+                                speech_text = f"I see {position_descriptions[0]}."
+                            elif len(position_descriptions) == 2:
+                                speech_text = f"I see {position_descriptions[0]} and {position_descriptions[1]}."
                             else:
-                                speech_text = f"I see {', '.join(items[:-1])}, and {items[-1]}."
+                                # For 3 or more objects
+                                speech_text = f"I see {', '.join(position_descriptions[:-1])}, and {position_descriptions[-1]}."
+                        else:
+                            speech_text = "Objects detected but no position descriptions available."
                     else:
                         speech_text = "I don't see any recognizable objects."
                     
@@ -179,7 +174,7 @@ class ContinuousObjectDetectionService:
                     
                     return {
                         "success": True,
-                        "objects": objects,
+                        "objects": detected_objects,
                         "speech_text": speech_text,
                         "detection_count": self.detection_count
                     }
