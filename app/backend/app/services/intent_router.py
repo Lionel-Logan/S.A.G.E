@@ -24,6 +24,11 @@ class IntentRouter:
                 "how do i get to", "show me the way to", "guide me to", 
                 "find a route to", "drive to", "walk to", "how far is"
             ],
+            "STOP_NAVIGATION": [
+                "stop navigation", "cancel navigation", "end navigation", 
+                "stop directions", "cancel directions", "end directions",
+                "stop the navigation", "cancel the navigation", "stop route"
+            ],
             "TRANSLATION": [
                 "translate this", "read this", "what does this say", "scan text",
                 "what's this saying", "what does that say", "read that",
@@ -119,7 +124,8 @@ class IntentRouter:
             Intent classification
         """
         prompt = f"""Classify the following user query into EXACTLY ONE of these categories:
-- NAVIGATION (for directions, routes, navigation requests)
+- NAVIGATION (for directions, routes, navigation requests, starting navigation)
+- STOP_NAVIGATION (for stopping, canceling, or ending active navigation)
 - TRANSLATION (for reading text, translating, OCR requests)
 - FACE_RECOGNITION (for identifying people, faces)
 - OBJECT_DETECTION (for identifying objects, things in view)
@@ -134,7 +140,7 @@ Response format: Return ONLY the category name, nothing else."""
             intent = response.text.strip().upper()
             
             # Validate response
-            valid_intents = ["NAVIGATION", "TRANSLATION", "FACE_RECOGNITION", "OBJECT_DETECTION", "ASSISTANT"]
+            valid_intents = ["NAVIGATION", "STOP_NAVIGATION", "TRANSLATION", "FACE_RECOGNITION", "OBJECT_DETECTION", "ASSISTANT"]
             if intent in valid_intents:
                 return intent
             else:
