@@ -13,6 +13,7 @@ from app.services.vision_service import VisionService
 from app.services.navigation_service import NavigationService
 from app.services.translate_service import TranslateService
 from app.services.object_detection_session import get_detection_session
+from app.services.navigation_session import get_navigation_session_manager
 from app.config import settings
 
 router = APIRouter(prefix="/assistant", tags=["AI Assistant"])
@@ -155,58 +156,44 @@ async def ask_assistant(request: AssistantRequest):
         if intent == "NAVIGATION":
             action_type = "navigation"
             
-            # A. Check for GPS
-            if request.lat is None or request.lon is None:
-                response_text = "I need your GPS location to provide directions."
+            # Extract destination from query
+            # Pattern matches: "navigate to X", "go to X", "take me to X", etc.
+            pattern = r"(?:navigate|go|take me|directions|route|find|head)(?:\s+to|\s+for)?\s+(.+)"
+            match = re.search(pattern, request.query, re.IGNORECASE)
             
+            if match:
+                destination = match.group(1).strip()
             else:
-                # B. INTELLIGENT CLEANING (The Upgrade)
-                # This pattern looks for:
-                # 1. Any command verbs (navigate, go, take me, etc.)
-                # 2. Optional prepositions (to, for)
-                # 3. CAPTURES everything after that as 'destination'
-                
-                # Regex Explanation:
-                # (?: ... ) -> Non-capturing group (just matches)
-                # \s+       -> One or more spaces
-                # (.+)      -> Capture everything else (The Destination)
-                pattern = r"(?:navigate|go|take me|directions|route|find|head)(?:\s+to|\s+for)?\s+(.+)"
-                
-                match = re.search(pattern, request.query, re.IGNORECASE)
-                
-                if match:
-                    destination = match.group(1).strip() # Extracts "Lulu Mall"
-                else:
-                    # Fallback: If the user just said "Lulu Mall" without "Navigate to"
-                    destination = request.query.strip()
+                # Fallback: use entire query as destination
+                destination = request.query.strip()
 
-                # C. Call the Service
-                if not destination:
-                    response_text = "Where would you like to go?"
-                else:
-                    # Expecting a DICTIONARY response now (not just a string)
-                    nav_result = await navigation_service.get_directions(
-                        start_lon=request.lon,
-                        start_lat=request.lat,
-                        destination_query=destination
-                    )
-
-                    # D. Handle the Result
-                    if "error" in nav_result:
-                        response_text = nav_result["error"]
-                    else:
-                        # Success! Create a summary for voice using formatted data
-                        time_text = nav_result.get('total_time_text', f"about {nav_result['total_time_min']} minutes")
-                        distance_text = nav_result.get('distance_text', f"{nav_result['total_distance']} {nav_result['distance_unit']}")
-                        eta = nav_result.get('eta', '')
-                        
-                        # The voice says this (natural and informative):
-                        response_text = f"Route found to {destination}. It's {distance_text} away and will take {time_text}. You should arrive around {eta}. I've sent the step-by-step directions to your screen."
-                        
-                        # The app gets this (Step-by-Step data):
-                        navigation_data = nav_result
+            if not destination:
+                response_text = "Where would you like to go?"
+            else:
+                # Create navigation session (waiting for location)
+                nav_manager = get_navigation_session_manager()
+                nav_manager.start_navigation(destination)
+                
+                # Inform user - route will be calculated when first location arrives via WebSocket
+                response_text = f"Starting navigation to {destination}. Getting your location..."
+                
+                # No navigation_data yet - will be calculated on first location update
+                navigation_data = None
             
             # Send navigation response to TTS
+            await _send_to_tts(response_text)
+
+        elif intent == "STOP_NAVIGATION":
+            action_type = "navigation"
+            
+            # Stop active navigation session
+            nav_manager = get_navigation_session_manager()
+            nav_manager.stop_navigation()
+            
+            response_text = "Navigation stopped."
+            navigation_data = None
+            
+            # Send response to TTS
             await _send_to_tts(response_text)
 
         elif intent == "FACE_RECOGNITION":
@@ -350,41 +337,20 @@ async def ask_assistant(request: AssistantRequest):
         elif intent == "TRANSLATION":
             action_type = "translation"
             
-            # Extract target language from query (default to Spanish if not specified)
-            query_lower = request.query.lower()
-            
-            # Simple language extraction: "translate to spanish", "translate this to french"
-            target_lang = "es"  # Default: Spanish
-            
-            if "spanish" in query_lower or "español" in query_lower:
-                target_lang = "es"
-            elif "french" in query_lower or "français" in query_lower:
-                target_lang = "fr"
-            elif "german" in query_lower or "deutsch" in query_lower:
-                target_lang = "de"
-            elif "hindi" in query_lower:
-                target_lang = "hi"
-            elif "chinese" in query_lower or "mandarin" in query_lower:
-                target_lang = "zh"
-            elif "japanese" in query_lower:
-                target_lang = "ja"
-            elif "arabic" in query_lower:
-                target_lang = "ar"
-            elif "portuguese" in query_lower:
-                target_lang = "pt"
-            elif "russian" in query_lower:
-                target_lang = "ru"
-            elif "italian" in query_lower:
-                target_lang = "it"
-            elif "korean" in query_lower:
-                target_lang = "ko"
+            # ALWAYS translate to English (TTS can only read English properly)
+            target_lang = "en"
             
             if request.image_data:
                 # Image translation: Gemini OCR → LibreTranslate
                 response_text = await translate_service.translate_image(request.image_data, target_lang)
             else:
                 # Text translation: LibreTranslate only
-                clean_query = request.query.replace("translate", "").replace("to spanish", "").replace("to french", "").replace("to german", "").strip()
+                # Extract text to translate by removing common translation command patterns
+                clean_query = request.query
+                clean_query = clean_query.replace("translate this:", "").replace("translate this", "")
+                clean_query = clean_query.replace("translate:", "").replace("translate", "")
+                clean_query = clean_query.replace("this:", "").replace("this", "")
+                clean_query = clean_query.strip()
                 response_text = await translate_service.translate_text(clean_query, target_lang)
             
             # Send translation response to TTS

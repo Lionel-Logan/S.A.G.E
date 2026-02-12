@@ -183,8 +183,23 @@ class CameraService:
             JPEG image bytes
         """
         camera = None
+        cleanup_camera = False
+        
         try:
-            camera = self._init_camera("photo")
+            # If streaming is active, reuse the existing camera
+            if self.streaming and self.camera:
+                logger.info("Reusing streaming camera for photo capture")
+                camera = self.camera
+                cleanup_camera = False
+            # If recording is active, reuse the recording camera
+            elif self.recording and self.camera:
+                logger.info("Reusing recording camera for photo capture")
+                camera = self.camera
+                cleanup_camera = False
+            else:
+                # Otherwise create a new camera instance
+                camera = self._init_camera("photo")
+                cleanup_camera = True
             
             # Capture as numpy array
             image_array = camera.capture_array()
@@ -213,7 +228,8 @@ class CameraService:
             logger.error(f"Failed to capture photo: {e}", exc_info=True)
             raise
         finally:
-            if camera:
+            # Only cleanup if we created a new camera instance
+            if cleanup_camera and camera:
                 camera.stop()
                 camera.close()
     
@@ -385,6 +401,13 @@ class CameraService:
         """
         if self.recording:
             return {"success": False, "message": "Already recording"}
+        
+        # Stop streaming if active to avoid camera conflicts
+        if self.streaming:
+            logger.info("Stopping stream to start video recording")
+            self.stop_streaming()
+            # Wait for stream to fully stop
+            time.sleep(0.3)
         
         if max_duration is None:
             max_duration = config.VIDEO_MAX_DURATION

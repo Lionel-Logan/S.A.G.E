@@ -29,7 +29,7 @@ class FaceRecognitionClient(ModelClient):
     def __init__(self):
         super().__init__(settings.FACE_RECOGNITION_URL, settings.MODEL_REQUEST_TIMEOUT)
     
-    async def recognize_faces(self, image_base64: str, threshold: float = 0.7) -> Dict[str, Any]:
+    async def recognize_faces(self, image_base64: str, threshold: float = 0.5) -> Dict[str, Any]:
         """
         Send image to face recognition server for recognition
         
@@ -61,7 +61,7 @@ class FaceRecognitionClient(ModelClient):
         except httpx.HTTPError as e:
             raise ModelServerError(f"Face recognition server error: {str(e)}")
     
-    async def enroll_face(self, name: str, image_base64: str, description: str = "Person", threshold: float = 0.7) -> Dict[str, Any]:
+    async def enroll_face(self, name: str, image_base64: str, description: str = "Person", threshold: float = 0.5) -> Dict[str, Any]:
         """
         Enroll a new face into the database
         

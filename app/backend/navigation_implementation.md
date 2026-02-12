@@ -1,5 +1,15 @@
 # Navigation Module - Real-Time Turn-by-Turn Implementation Plan
 
+## workflow currently
+Voice: "Navigate to X" 
+  → Session created (waiting_for_location)
+  → Frontend auto-sends GPS every 3 seconds
+  → First location triggers OSRM route calculation
+  → Session becomes 'active' with route steps
+  → Each location checks proximity (<50m to next maneuver)
+  → Instruction sent to TTS + frontend
+  → Arrival detected at <20m or all steps completed
+
 ## User Requirements
 
 i have a change in the logic of the navigation module.

@@ -306,7 +306,7 @@ class TTSService:
         """Speak text synchronously (blocking)"""
         from utils.audio_manager import AudioManager
         
-        logger.info(f"[TTS] _speak_blocking called with text: '{text[:50]}'")
+        logger.info(f"[TTS] Speaking text: '{text}'")
         
         # Acquire audio lock for TTS
         if not AudioManager.acquire_for_tts(timeout=5.0):
@@ -350,13 +350,13 @@ class TTSService:
                     rate = self.config.voice_speed
                     volume = int(self.config.voice_volume * 100)  # espeak uses 0-100
                     
-                    print(f"[TTS] Using espeak -> aplay pipeline for audio output")
-                    print(f"[TTS] Voice: {voice_id}, Rate: {rate}, Volume: {volume}")
-                    print(f"[TTS] Text to speak: '{text}'")
+                    logger.info(f"[TTS] Using espeak -> aplay pipeline for audio output")
+                    logger.info(f"[TTS] Voice: {voice_id}, Rate: {rate}, Volume: {volume}")
+                    logger.info(f"[TTS] Text to speak: '{text}'")
                     
                     # First, test if aplay is available and working
                     test_result = subprocess.run(['which', 'aplay'], capture_output=True)
-                    print(f"[TTS] aplay location: {test_result.stdout.decode().strip()}")
+                    logger.debug(f"[TTS] aplay location: {test_result.stdout.decode().strip()}")
                     
                     # Generate audio with espeak and pipe to aplay
                     espeak_cmd = [
@@ -370,7 +370,7 @@ class TTSService:
                     
                     aplay_cmd = ['aplay']  # Use default device (works manually)
                     
-                    print(f"[TTS] Running: {' '.join(espeak_cmd)} | {' '.join(aplay_cmd)}")
+                    logger.debug(f"[TTS] Running: {' '.join(espeak_cmd)} | {' '.join(aplay_cmd)}")
                     
                     # Create subprocess pipeline: espeak | aplay
                     # Use the sage user's environment for PulseAudio access
@@ -382,8 +382,8 @@ class TTSService:
                     if 'PULSE_SERVER' not in env:
                         env['PULSE_SERVER'] = f"unix:{env['XDG_RUNTIME_DIR']}/pulse/native"
                     
-                    print(f"[TTS] Using XDG_RUNTIME_DIR: {env.get('XDG_RUNTIME_DIR')}")
-                    print(f"[TTS] Using PULSE_SERVER: {env.get('PULSE_SERVER')}")
+                    logger.debug(f"[TTS] Using XDG_RUNTIME_DIR: {env.get('XDG_RUNTIME_DIR')}")
+                    logger.debug(f"[TTS] Using PULSE_SERVER: {env.get('PULSE_SERVER')}")
                     
                     espeak_proc = subprocess.Popen(
                         espeak_cmd,
@@ -404,40 +404,40 @@ class TTSService:
                     if espeak_proc.stdout:
                         espeak_proc.stdout.close()
                     
-                    print("[TTS] Pipeline started, waiting for completion...")
+                    logger.debug("[TTS] Pipeline started, waiting for completion...")
                     
                     # Wait for completion
                     aplay_stdout, aplay_stderr = aplay_proc.communicate(timeout=30)
                     espeak_stderr = espeak_proc.stderr.read() if espeak_proc.stderr else b''
                     espeak_proc.wait()
                     
-                    print(f"[TTS] espeak exit code: {espeak_proc.returncode}")
-                    print(f"[TTS] aplay exit code: {aplay_proc.returncode}")
+                    logger.debug(f"[TTS] espeak exit code: {espeak_proc.returncode}")
+                    logger.debug(f"[TTS] aplay exit code: {aplay_proc.returncode}")
                     
                     if espeak_stderr:
-                        print(f"[TTS] espeak stderr: {espeak_stderr.decode()}")
+                        logger.debug(f"[TTS] espeak stderr: {espeak_stderr.decode()}")
                     if aplay_stderr:
-                        print(f"[TTS] aplay stderr: {aplay_stderr.decode()}")
+                        logger.debug(f"[TTS] aplay stderr: {aplay_stderr.decode()}")
                     if aplay_stdout:
-                        print(f"[TTS] aplay stdout: {aplay_stdout.decode()}")
+                        logger.debug(f"[TTS] aplay stdout: {aplay_stdout.decode()}")
                     
                     if aplay_proc.returncode != 0:
-                        print(f"[TTS] aplay failed with code {aplay_proc.returncode}")
+                        logger.error(f"[TTS] aplay failed with code {aplay_proc.returncode}")
                         raise Exception(f"aplay returned {aplay_proc.returncode}")
                     
                     if espeak_proc.returncode != 0:
-                        print(f"[TTS] espeak failed with code {espeak_proc.returncode}")
+                        logger.error(f"[TTS] espeak failed with code {espeak_proc.returncode}")
                         raise Exception(f"espeak returned {espeak_proc.returncode}")
                     
-                    print(f"[TTS] Speech completed successfully via espeak->aplay pipeline")
+                    logger.info(f"[TTS] Speech completed successfully via espeak->aplay pipeline")
                     
                 except Exception as pipeline_error:
-                    print(f"[TTS] espeak->aplay pipeline failed: {pipeline_error}")
-                    print(f"[TTS] Falling back to pyttsx3")
+                    logger.warning(f"[TTS] espeak->aplay pipeline failed: {pipeline_error}")
+                    logger.info(f"[TTS] Falling back to pyttsx3")
                     # Fallback to pyttsx3
                     self.engine.say(text)
                     self.engine.runAndWait()
-                    print(f"[TTS] Speech completed via pyttsx3 fallback")
+                    logger.info(f"[TTS] Speech completed via pyttsx3 fallback")
                 
                 self.is_speaking = False
                 logger.info("Speech completed")
@@ -470,11 +470,7 @@ class TTSService:
                     self.is_speaking = True
                     self.stop_requested = False
                     
-                    logger.info(f"Speaking (async): '{text[:50]}{'...' if len(text) > 50 else ''}'")
-                    
-                    self.engine.say(text)
-                    self.engine.runAndWait()
-                    
+                    logger.info(f"[TTS] Speaking (async): '{text}'")
                     self.is_speaking = False
                     logger.info("Async speech completed")
                     

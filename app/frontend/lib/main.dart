@@ -11,8 +11,10 @@ import 'screens/bluetooth_enable_screen.dart';
 import 'screens/object_detection_settings_screen.dart';
 import 'screens/camera_settings_screen.dart';
 import 'screens/microphone_settings_screen.dart';
+import 'screens/location_debug_screen.dart';
 import 'services/storage_service.dart';
 import 'services/bluetooth_audio_service.dart';
+import 'services/location_stream_manager.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -212,12 +214,35 @@ class _MainNavigatorState extends State<MainNavigator> with AutomaticKeepAliveCl
   void initState() {
     super.initState();
     _listenToBluetoothState();
+    _initializeLocationStreaming();
   }
 
   @override
   void dispose() {
     _bluetoothSubscription?.cancel();
     super.dispose();
+  }
+
+  /// Initialize location streaming (WebSocket + location tracking)
+  Future<void> _initializeLocationStreaming() async {
+    try {
+      // Get paired device info
+      final pairedDevice = await StorageService.getPairedDevice();
+      
+      if (pairedDevice != null) {
+        print('🔌 [MainNavigator] Initializing location streaming with device: ${pairedDevice.id}');
+        
+        // Initialize LocationStreamManager with device ID
+        await LocationStreamManager().initialize(pairedDevice.id);
+        
+        print('✅ [MainNavigator] Location streaming initialized');
+      } else {
+        print('⚠️ [MainNavigator] No paired device found, skipping location streaming');
+      }
+    } catch (e) {
+      print('❌ [MainNavigator] Error initializing location streaming: $e');
+      // Don't block app startup if location streaming fails
+    }
   }
 
   void _listenToBluetoothState() {
@@ -286,6 +311,12 @@ class _MainNavigatorState extends State<MainNavigator> with AutomaticKeepAliveCl
       case 'microphone_settings':
         return MicrophoneSettingsScreen(
           key: const PageStorageKey('microphone_settings'),
+          onNavigate: _handleNavigation,
+          currentRoute: _currentRoute,
+        );
+      case 'location_debug':
+        return LocationDebugScreen(
+          key: const PageStorageKey('location_debug'),
           onNavigate: _handleNavigation,
           currentRoute: _currentRoute,
         );

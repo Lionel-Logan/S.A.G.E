@@ -1,6 +1,6 @@
 import spacy
 from typing import Tuple
-from google import genai
+import google.generativeai as genai
 from app.config import settings
 
 # Load the lightweight English model
@@ -12,9 +12,10 @@ except:
 
 class IntentRouter:
     def __init__(self):
-        # Initialize Gemini client
-        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        self.model_name = 'gemini-2.0-flash-exp'
+        # Initialize Gemini
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        self.model_name = 'models/gemini-2.0-flash'
+        self.model = genai.GenerativeModel(self.model_name)
         
         # 1. STRICT PHRASES (Multi-word triggers that are 100% certain)
         self.strict_rules = {
@@ -22,6 +23,11 @@ class IntentRouter:
                 "navigate to", "take me to", "directions to", "go to", "route to", 
                 "how do i get to", "show me the way to", "guide me to", 
                 "find a route to", "drive to", "walk to", "how far is"
+            ],
+            "STOP_NAVIGATION": [
+                "stop navigation", "cancel navigation", "end navigation", 
+                "stop directions", "cancel directions", "end directions",
+                "stop the navigation", "cancel the navigation", "stop route"
             ],
             "TRANSLATION": [
                 "translate this", "read this", "what does this say", "scan text",
@@ -118,7 +124,8 @@ class IntentRouter:
             Intent classification
         """
         prompt = f"""Classify the following user query into EXACTLY ONE of these categories:
-- NAVIGATION (for directions, routes, navigation requests)
+- NAVIGATION (for directions, routes, navigation requests, starting navigation)
+- STOP_NAVIGATION (for stopping, canceling, or ending active navigation)
 - TRANSLATION (for reading text, translating, OCR requests)
 - FACE_RECOGNITION (for identifying people, faces)
 - OBJECT_DETECTION (for identifying objects, things in view)
@@ -129,14 +136,11 @@ User query: "{text}"
 Response format: Return ONLY the category name, nothing else."""
 
         try:
-            response = await self.client.models.generate_content_async(
-                model=self.model_name,
-                contents=prompt
-            )
+            response = await self.model.generate_content_async(prompt)
             intent = response.text.strip().upper()
             
             # Validate response
-            valid_intents = ["NAVIGATION", "TRANSLATION", "FACE_RECOGNITION", "OBJECT_DETECTION", "ASSISTANT"]
+            valid_intents = ["NAVIGATION", "STOP_NAVIGATION", "TRANSLATION", "FACE_RECOGNITION", "OBJECT_DETECTION", "ASSISTANT"]
             if intent in valid_intents:
                 return intent
             else:

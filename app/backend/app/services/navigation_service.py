@@ -170,7 +170,13 @@ class NavigationService:
                 action = maneuver.get("type", "move").replace("-", " ")
                 modifier = maneuver.get("modifier", "").replace("_", " ")
                 
-                # 2. Road Name (expand abbreviations for TTS)
+                # 2. Extract GPS coordinates for this instruction point
+                # OSRM provides maneuver location as [longitude, latitude]
+                maneuver_location = maneuver.get("location", [None, None])
+                maneuver_lon = maneuver_location[0]
+                maneuver_lat = maneuver_location[1]
+                
+                # 3. Road Name (expand abbreviations for TTS)
                 road = step.get("name", "the path")
                 if road == "": 
                     road = "the path"
@@ -181,7 +187,7 @@ class NavigationService:
                     road = road.replace(" Ave", " Avenue")
                     road = road.replace(" Blvd", " Boulevard")
                 
-                # 3. Distance for this step
+                # 4. Distance for this step
                 dist = step.get("distance", 0)
                 dist_formatted = self._format_distance(dist)
                 
@@ -200,7 +206,9 @@ class NavigationService:
                 parsed_steps.append({
                     "instruction": instruction,
                     "distance_meters": round(dist),
-                    "distance_text": dist_formatted["text"]
+                    "distance_text": dist_formatted["text"],
+                    "lat": maneuver_lat,  # GPS coordinate for proximity checking
+                    "lon": maneuver_lon
                 })
 
             # Format total distance and time
@@ -232,65 +240,3 @@ class NavigationService:
         except Exception as e:
             print(f"⚠️ Routing error: {e}")
             return {"error": "An error occurred while finding the route. Please try again."}
-# 👇 UPDATED FUNCTION 👇
-    async def get_directions(self, start_lon, start_lat, destination_query: str):
-        """
-        Returns a dictionary with route metadata and a FULL LIST of steps.
-        """
-        dest_coords = await self.get_coordinates(destination_query, start_lat, start_lon)
-        if not dest_coords:
-            return {"error": f"Place '{destination_query}' not found."}
-
-        dest_lon, dest_lat = dest_coords
-        route_url = f"{self.router_url}/{start_lon},{start_lat};{dest_lon},{dest_lat}"
-        
-        params = {"steps": "true", "geometries": "geojson", "overview": "false"}
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(route_url, params=params)
-            data = resp.json()
-
-        if data.get("code") != "Ok" or not data.get("routes"):
-            return {"error": "No walking route found."}
-
-        # Extract Route Data
-        route = data["routes"][0]
-        legs = route["legs"][0]
-        steps = legs["steps"]
-
-        # Parse ALL steps into a readable list
-        parsed_steps = []
-        for step in steps:
-            # 1. Instruction (e.g., "turn right")
-            maneuver = step["maneuver"]
-            action = maneuver.get("type", "move")
-            modifier = maneuver.get("modifier", "").replace("_", " ")
-            
-            # 2. Road Name
-            road = step.get("name", "the path")
-            if road == "": road = "the path"
-            
-            # 3. Distance for this step
-            dist = round(step.get("distance", 0))
-            
-            # Construct natural language sentence
-            # Example: "Turn right onto Service Road. Go for 50 meters."
-            if action == "arrive":
-                instruction = f"You have arrived at your destination."
-            elif action == "depart":
-                instruction = f"Head {modifier} on {road}."
-            else:
-                instruction = f"{action} {modifier} onto {road}."
-            
-            parsed_steps.append({
-                "instruction": instruction,
-                "distance_meters": dist
-            })
-
-        # Return the RICH DATA object
-        return {
-            "destination": destination_query,
-            "total_distance": round(route["distance"]),
-            "total_time_min": round(route["duration"] / 60),
-            "steps": parsed_steps
-        }
