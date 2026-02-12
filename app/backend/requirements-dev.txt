@@ -1,0 +1,30 @@
+# ========================================
+# SAGE Backend - Development Dependencies
+# ========================================
+#
+# This file contains dependencies ONLY needed for development and testing.
+# These are NOT required in production deployments.
+#
+# WHY SEPARATE?
+# - Faster production builds (smaller Docker images, quicker deployments)
+# - Cleaner production environment (no unnecessary packages)
+# - Better security (fewer dependencies = smaller attack surface)
+#
+# INSTALLATION:
+#   Development: pip install -r requirements.txt -r requirements-dev.txt
+#   Production:  pip install -r requirements.txt
+#
+# ========================================
+
+# Testing
+pytest==7.4.4              # Testing framework
+pytest-asyncio==0.23.3     # Async test support for FastAPI
+pytest-cov==4.1.0          # Code coverage reports
+
+# Code Quality
+black==24.1.1              # Code formatter
+flake8==7.0.0              # Linter for code style
+mypy==1.8.0                # Static type checker
+
+# Development Tools
+ipython==8.20.0            # Enhanced Python REPL for debugging
