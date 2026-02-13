@@ -8,8 +8,11 @@ class GeminiService:
     def __init__(self):
         # Configure Gemini with API key
         genai.configure(api_key=settings.GEMINI_API_KEY)
-        self.model_name = 'models/gemini-2.0-flash'
+        # Using gemini-2.5-flash (better free tier support than 2.0-flash)
+        self.model_name = 'gemini-2.5-flash'
         self.model = genai.GenerativeModel(self.model_name)
+        print(f"✅ Gemini initialized with model: {self.model_name}")
+        print(f"🔑 API Key (last 8 chars): ...{settings.GEMINI_API_KEY[-8:]}")
         
         # System prompt defining S.A.G.E's personality and response style
         self.system_prompt = """You are S.A.G.E (Situational Awareness & Guidance Engine), an AI assistant for smartglasses.
@@ -53,11 +56,24 @@ Respond naturally and concisely."""
             
             # Using async generation
             response = await self.model.generate_content_async(prompt)
-            return response.text
+            response_text = response.text
+            
+            # Log successful response
+            print(f"🤖 Gemini Response: {response_text[:200]}{'...' if len(response_text) > 200 else ''}")
+            
+            return response_text
         except Exception as e:
+            error_str = str(e)
             # Print the actual error to the terminal so we can see it
-            print(f"🔥 Gemini Error: {str(e)}")
-            return "I'm having trouble connecting to my brain right now."
+            print(f"🔥 Gemini Error: {error_str}")
+            
+            # Handle rate limit errors specifically
+            if "429" in error_str or "quota" in error_str.lower() or "rate limit" in error_str.lower():
+                return "I've reached my thinking limit for now. Please try again in a minute, or ask me about navigation, translation, or object detection instead."
+            elif "401" in error_str or "invalid" in error_str.lower():
+                return "My API key seems to have an issue. Please contact support."
+            else:
+                return "I'm having trouble connecting to my brain right now. Try again in a moment."
 
         # 👇 THIS IS THE METHOD YOU MUST HAVE FOR YOUR CODE TO WORK 👇
     async def ask_with_image(self, prompt: str, base64_image: str) -> str:
@@ -88,6 +104,11 @@ User query: {prompt}
 Respond naturally and concisely."""
 
             response = await self.model.generate_content_async([enhanced_prompt, pil_image])
-            return response.text
+            response_text = response.text
+            
+            # Log successful vision response
+            print(f"🤖 Gemini Vision Response: {response_text[:200]}{'...' if len(response_text) > 200 else ''}")
+            
+            return response_text
         except Exception as e:
             return f"AI Vision Error: {str(e)}"

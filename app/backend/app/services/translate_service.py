@@ -1,4 +1,4 @@
-from app.services.gemini_service import GeminiService
+from app.services.ocr_service import OCRService
 from app.services.libre_service import LibreTranslateService
 
 
@@ -6,11 +6,11 @@ class TranslateService:
     """
     Hybrid Translation Service:
     - Text translation: LibreTranslate (fast, free, offline-capable)
-    - Image translation: Gemini OCR → LibreTranslate translation
+    - Image translation: Google Vision OCR → LibreTranslate translation
     """
     
     def __init__(self):
-        self.ocr_engine = GeminiService()  # For reading text from images
+        self.ocr_engine = OCRService()  # Google Cloud Vision for OCR
         self.translator = LibreTranslateService()  # For actual translation
     
     async def close(self):
@@ -66,7 +66,7 @@ class TranslateService:
     async def translate_image(self, image_data: str, target_lang: str = "en") -> str:
         """
         Hybrid Pipeline for image translation (Always to English):
-        1. Use Gemini to extract text from image (OCR)
+        1. Use Google Vision to extract text from image (OCR)
         2. Use LibreTranslate to translate the extracted text to English
         
         Args:
@@ -77,9 +77,8 @@ class TranslateService:
             Voice-friendly format with English translation
         """
         try:
-            # Step 1: OCR using Gemini
-            ocr_prompt = "Read all the text you see in this image. Output ONLY the raw text, exactly as it appears. Do not translate or interpret it."
-            extracted_text = await self.ocr_engine.ask_with_image(ocr_prompt, image_data)
+            # Step 1: OCR using Google Cloud Vision
+            extracted_text = await self.ocr_engine.extract_text(image_data)
             
             # Check if OCR was successful
             if not extracted_text or len(extracted_text.strip()) < 3:
