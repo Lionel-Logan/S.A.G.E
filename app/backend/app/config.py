@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     # External APIs
     GOOGLE_VISION_CREDENTIALS: str = "service_account.json"  # Path to JSON key for Vision + Gemini
     GOOGLE_TRANSLATE_API_KEY: str  # Google Cloud Translation API key
+    GEMINI_API_KEY: str = ""  # Gemini API key
     
     # Performance
     MAX_IMAGE_SIZE_MB: int = 5

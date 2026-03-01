@@ -1,28 +1,20 @@
-import os
-import google.generativeai as genai
-from google.oauth2 import service_account
+from google import genai
 from app.config import settings
 from app.core.utils import decode_image
 import PIL.Image
 import cv2
 
-# Resolve service account path relative to the backend root
-_BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_SERVICE_ACCOUNT_PATH = os.path.join(_BACKEND_ROOT, settings.GOOGLE_VISION_CREDENTIALS)
-
 class GeminiService:
     def __init__(self):
-        # Authenticate using service account credentials
-        credentials = service_account.Credentials.from_service_account_file(
-            _SERVICE_ACCOUNT_PATH,
-            scopes=["https://www.googleapis.com/auth/generative-language"]
-        )
-        genai.configure(credentials=credentials)
+        # Authenticate using API key
+        api_key = settings.GEMINI_API_KEY
+        key_preview = f"{api_key[:10]}...{api_key[-4:]}" if len(api_key) > 14 else "(too short)"
+        print(f"🔑 Gemini API key loaded: {key_preview}")
+        self.client = genai.Client(api_key=api_key)
         # Using gemini-2.0-flash
-        self.model_name = 'gemini-2.0-flash'
-        self.model = genai.GenerativeModel(self.model_name)
+        self.model_name = 'gemini-2.5-flash'
         print(f"✅ Gemini initialized with model: {self.model_name}")
-        print(f"🔑 Auth: service account ({settings.GOOGLE_VISION_CREDENTIALS})")
+        print(f"🔑 Auth: API key")
         
         # System prompt defining S.A.G.E's personality and response style
         self.system_prompt = """You are S.A.G.E (Situational Awareness & Guidance Engine), an AI assistant for smartglasses.
@@ -65,7 +57,9 @@ User query: {query}
 Respond naturally and concisely."""
             
             # Using async generation
-            response = await self.model.generate_content_async(prompt)
+            response = await self.client.aio.models.generate_content(
+                model=self.model_name, contents=prompt
+            )
             response_text = response.text
             
             # Log successful response
@@ -113,7 +107,9 @@ User query: {prompt}
 
 Respond naturally and concisely."""
 
-            response = await self.model.generate_content_async([enhanced_prompt, pil_image])
+            response = await self.client.aio.models.generate_content(
+                model=self.model_name, contents=[enhanced_prompt, pil_image]
+            )
             response_text = response.text
             
             # Log successful vision response
