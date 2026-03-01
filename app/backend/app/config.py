@@ -1,5 +1,4 @@
 from pydantic_settings import BaseSettings
-from typing import Optional
 
 class Settings(BaseSettings):
     # App Info
@@ -28,9 +27,8 @@ class Settings(BaseSettings):
     PI_REQUEST_TIMEOUT: int = 10
     
     # External APIs
-    GOOGLE_VISION_CREDENTIALS: Optional[str] = None  # Path to JSON key
-    GEMINI_API_KEY: str
-    LIBRETRANSLATE_URL: str = "https://libretranslate.com"
+    GOOGLE_VISION_CREDENTIALS: str = "service_account.json"  # Path to JSON key for Vision + Gemini
+    GOOGLE_TRANSLATE_API_KEY: str  # Google Cloud Translation API key
     
     # Performance
     MAX_IMAGE_SIZE_MB: int = 5

@@ -1,17 +1,17 @@
 from app.services.ocr_service import OCRService
-from app.services.libre_service import LibreTranslateService
+from app.services.google_translate_service import GoogleTranslateService
 
 
 class TranslateService:
     """
     Hybrid Translation Service:
-    - Text translation: LibreTranslate (fast, free, offline-capable)
-    - Image translation: Google Vision OCR → LibreTranslate translation
+    - Text translation: Google Cloud Translate
+    - Image translation: Google Vision OCR → Google Translate
     """
     
     def __init__(self):
         self.ocr_engine = OCRService()  # Google Cloud Vision for OCR
-        self.translator = LibreTranslateService()  # For actual translation
+        self.translator = GoogleTranslateService()  # Google Cloud Translate
     
     async def close(self):
         """Cleanup clients"""
@@ -37,7 +37,7 @@ class TranslateService:
 
     async def translate_text(self, text: str, target_lang: str = "en") -> str:
         """
-        Translate plain text using LibreTranslate (Always to English)
+        Translate plain text using Google Cloud Translate (Always to English)
         
         Args:
             text: Text to translate
@@ -50,7 +50,7 @@ class TranslateService:
             # Detect source language
             source_lang = await self.translator.detect_language(text)
             
-            # Translate using LibreTranslate
+            # Translate using Google Cloud Translate
             translated = await self.translator.translate(text, target_lang, source_lang)
             
             # Voice-friendly output
@@ -67,7 +67,7 @@ class TranslateService:
         """
         Hybrid Pipeline for image translation (Always to English):
         1. Use Google Vision to extract text from image (OCR)
-        2. Use LibreTranslate to translate the extracted text to English
+        2. Use Google Cloud Translate to translate the extracted text to English
         
         Args:
             image_data: Base64 encoded image

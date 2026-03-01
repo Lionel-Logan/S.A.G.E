@@ -127,7 +127,7 @@ class ContinuousObjectDetectionService:
                 # Note: We're calling our own internal API endpoint
                 # Using localhost and assuming we're running on port 8000
                 response = await client.post(
-                    f"http://localhost:8003{settings.API_V1_PREFIX}/objects/detect",
+                    f"http://192.168.1.6:8003{settings.API_V1_PREFIX}/objects/detect",
                     json={
                         "image_base64": image_base64,
                         "confidence_threshold": 0.5

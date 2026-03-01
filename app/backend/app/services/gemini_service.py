@@ -1,18 +1,28 @@
+import os
 import google.generativeai as genai
+from google.oauth2 import service_account
 from app.config import settings
 from app.core.utils import decode_image
 import PIL.Image
 import cv2
 
+# Resolve service account path relative to the backend root
+_BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_SERVICE_ACCOUNT_PATH = os.path.join(_BACKEND_ROOT, settings.GOOGLE_VISION_CREDENTIALS)
+
 class GeminiService:
     def __init__(self):
-        # Configure Gemini with API key
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        # Using gemini-2.5-flash (better free tier support than 2.0-flash)
-        self.model_name = 'gemini-2.5-flash'
+        # Authenticate using service account credentials
+        credentials = service_account.Credentials.from_service_account_file(
+            _SERVICE_ACCOUNT_PATH,
+            scopes=["https://www.googleapis.com/auth/generative-language"]
+        )
+        genai.configure(credentials=credentials)
+        # Using gemini-2.0-flash
+        self.model_name = 'gemini-2.0-flash'
         self.model = genai.GenerativeModel(self.model_name)
         print(f"✅ Gemini initialized with model: {self.model_name}")
-        print(f"🔑 API Key (last 8 chars): ...{settings.GEMINI_API_KEY[-8:]}")
+        print(f"🔑 Auth: service account ({settings.GOOGLE_VISION_CREDENTIALS})")
         
         # System prompt defining S.A.G.E's personality and response style
         self.system_prompt = """You are S.A.G.E (Situational Awareness & Guidance Engine), an AI assistant for smartglasses.

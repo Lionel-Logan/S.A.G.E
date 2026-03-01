@@ -1,3 +1,11 @@
+# ========================================
+# DEPRECATED - NO LONGER NEEDED
+# ========================================
+# This LibreTranslate service is no longer used.
+# Translation now uses Google Cloud Translate API.
+# This file is kept for reference only.
+# ========================================
+
 services:
   libretranslate:
     image: libretranslate/libretranslate:latest

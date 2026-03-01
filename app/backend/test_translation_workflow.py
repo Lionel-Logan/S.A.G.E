@@ -1,12 +1,12 @@
 """
 Complete Image Translation Workflow Test
-Tests: Pi Camera → Google Vision OCR → LibreTranslate → TTS
+Tests: Pi Camera → Google Vision OCR → Google Translate → TTS
 
 This tests the entire pipeline:
 1. Image input (simulated from Pi camera)
 2. Google Vision OCR text extraction
 3. Language detection
-4. Translation to English using LibreTranslate
+4. Translation to English using Google Cloud Translate
 5. Output formatting for TTS
 
 Run: python test_translation_workflow.py
@@ -21,7 +21,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.services.ocr_service import OCRService
-from app.services.libre_service import LibreTranslateService
+from app.services.google_translate_service import GoogleTranslateService
 from app.services.translate_service import TranslateService
 
 
@@ -96,14 +96,14 @@ async def test_ocr_service():
         return False
 
 
-async def test_libretranslate_service():
-    """Test 2: LibreTranslate Service"""
-    print_header("TEST 2: LibreTranslate Service")
+async def test_google_translate_service():
+    """Test 2: Google Cloud Translate Service"""
+    print_header("TEST 2: Google Cloud Translate Service")
     
     try:
-        print_step(1, "Initializing LibreTranslate Service")
-        translator = LibreTranslateService()
-        print_success("LibreTranslate Service initialized")
+        print_step(1, "Initializing Google Translate Service")
+        translator = GoogleTranslateService()
+        print_success("Google Translate Service initialized")
         
         # Test 1: Language Detection
         print_step(2, "Testing language detection")
@@ -136,12 +136,11 @@ async def test_libretranslate_service():
         return True
         
     except Exception as e:
-        print_error(f"LibreTranslate test failed: {e}")
+        print_error(f"Google Translate test failed: {e}")
         print("\n🔧 Troubleshooting:")
-        print("   1. Ensure LibreTranslate is running (Docker or hosted)")
-        print("   2. Check LIBRETRANSLATE_URL in .env file")
-        print("   3. For Docker setup: cd app/backend && docker-compose up libretranslate")
-        print("   4. See LIBRETRANSLATE_STATUS.md for setup instructions")
+        print("   1. Verify GOOGLE_TRANSLATE_API_KEY in .env file")
+        print("   2. Check Translation API is enabled in Google Cloud Console")
+        print("   3. Ensure google-cloud-translate is installed")
         return False
 
 
@@ -234,7 +233,7 @@ async def test_pi_workflow_simulation():
     print("   2. Backend → Pi: Request image capture")
     print("   3. Pi → Backend: Send captured image (base64)")
     print("   4. Backend: Run OCR (Google Vision)")
-    print("   5. Backend: Translate to English (LibreTranslate)")
+    print("   5. Backend: Translate to English (Google Translate)")
     print("   6. Backend → Pi: Send result to TTS")
     
     try:
@@ -264,12 +263,12 @@ async def run_all_tests():
     """Run all tests in sequence"""
     print("\n" + "=" * 70)
     print("  🚀 IMAGE TRANSLATION WORKFLOW TEST SUITE")
-    print("  Testing: Pi Camera → Google Vision OCR → LibreTranslate → TTS")
+    print("  Testing: Pi Camera → Google Vision OCR → Google Translate → TTS")
     print("=" * 70)
     
     results = {
         "OCR Service": await test_ocr_service(),
-        "LibreTranslate Service": await test_libretranslate_service(),
+        "Google Translate Service": await test_google_translate_service(),
         "Complete Pipeline": await test_complete_translation_pipeline(),
         "Workflow Simulation": await test_pi_workflow_simulation(),
     }
@@ -302,8 +301,8 @@ async def run_all_tests():
         print("\n  ⚠️  Some tests failed. Please check configuration:")
         if not results.get("OCR Service"):
             print("     - Fix Google Vision setup (see GOOGLE_VISION_SETUP.md)")
-        if not results.get("LibreTranslate Service"):
-            print("     - Fix LibreTranslate setup (see LIBRETRANSLATE_STATUS.md)")
+        if not results.get("Google Translate Service"):
+            print("     - Fix Google Translate setup (ensure API key is correct)")
     
     print("\n" + "=" * 70 + "\n")
 

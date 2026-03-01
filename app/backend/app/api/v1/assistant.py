@@ -372,19 +372,14 @@ async def ask_assistant(request: AssistantRequest):
             
             # ALWAYS translate to English (TTS can only read English properly)
             target_lang = "en"
-            
-            if request.image_data:
-                # Image translation: Gemini OCR → LibreTranslate
-                response_text = await translate_service.translate_image(request.image_data, target_lang)
+
+            # Always capture image from Pi camera → OCR → Google Translate
+            await _send_to_tts("Capturing image, please hold still.")
+            image_data = request.image_data or await _capture_image_from_pi()
+            if image_data:
+                response_text = await translate_service.translate_image(image_data, target_lang)
             else:
-                # Text translation: LibreTranslate only
-                # Extract text to translate by removing common translation command patterns
-                clean_query = request.query
-                clean_query = clean_query.replace("translate this:", "").replace("translate this", "")
-                clean_query = clean_query.replace("translate:", "").replace("translate", "")
-                clean_query = clean_query.replace("this:", "").replace("this", "")
-                clean_query = clean_query.strip()
-                response_text = await translate_service.translate_text(clean_query, target_lang)
+                response_text = "I couldn't capture an image from the camera. Please try again."
             
             # Send translation response to TTS
             await _send_to_tts(response_text)

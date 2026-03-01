@@ -18,7 +18,8 @@ httpx==0.26.0
 
 # AI/ML Integration
 google-cloud-vision==3.5.0
-google-genai==1.0.1
+google-cloud-translate==3.12.1
+google-genai==1.0.0
 spacy==3.7.2
 
 # Utils
