@@ -1,119 +1,28 @@
-import spacy
-from typing import Tuple
 from google import genai
+from google.oauth2 import service_account
 from app.config import settings
 
-# Load the lightweight English model
-try:
-    nlp = spacy.load("en_core_web_sm")
-except:
-    print("Spacy model not found. Run: python -m spacy download en_core_web_sm")
-    nlp = None
+def _load_vertex_credentials():
+    """Load Vertex AI credentials from service account JSON."""
+    return service_account.Credentials.from_service_account_file(
+        settings.GOOGLE_VISION_CREDENTIALS,
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
 
 class IntentRouter:
     def __init__(self):
-        # Authenticate using API key
-        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        # Authenticate using service account credentials
+        self.client = genai.Client(
+            vertexai=True,
+            project=settings.GOOGLE_CLOUD_PROJECT,
+            location=settings.GOOGLE_CLOUD_LOCATION,
+            credentials=_load_vertex_credentials()
+        )
         self.model_name = 'gemini-2.5-flash'
         
-        # 1. STRICT PHRASES (Multi-word triggers that are 100% certain)
-        self.strict_rules = {
-            "NAVIGATION": [
-                "navigate to", "take me to", "directions to", "go to", "route to", 
-                "how do i get to", "show me the way to", "guide me to", 
-                "find a route to", "drive to", "walk to", "how far is"
-            ],
-            "STOP_NAVIGATION": [
-                "stop navigation", "cancel navigation", "end navigation", 
-                "stop directions", "cancel directions", "end directions",
-                "stop the navigation", "cancel the navigation", "stop route"
-            ],
-            "TRANSLATION": [
-                "translate this", "read this", "what does this say", "scan text",
-                "what's this saying", "what does that say", "read that",
-                "translate that", "what language is this", "read the sign",
-                "what's written", "decipher this"
-            ],
-            "FACE_RECOGNITION": [
-                "who is this", "who is that", "recognize face", "identify person",
-                "is that", "do you know who", "who's this person", "who am i looking at",
-                "identify this person", "is this", "recognize this person",
-                "tell me who this is", "do you recognize this person"
-            ],
-            # FACE_ENROLLMENT disabled - All enrollment happens through failed recognition flow
-            # "FACE_ENROLLMENT": [
-            #     "enroll face", "register face", "add face", "save face", 
-            #     "remember this person", "add this person", "register this person",
-            #     "enroll this face", "save this person", "remember this face",
-            #     "add new face", "register new person", "enroll new face",
-            #     "save new person", "add new person"
-            # ],
-            "OBJECT_DETECTION": [
-                "what is this", "what object", "detect object", "scan item",
-                "what am i looking at", "what's in front of me", "what's that object",
-                "identify this object", "what do you see", "describe what you see",
-                "scan this", "what's this thing", "what objects do you see",
-                "tell me what you see", "what are you seeing", "look around",
-                "start object detection", "begin object detection", "start scanning",
-                "stop object detection", "end object detection", "stop scanning"
-            ]
-        }
-
-        # 2. KEYWORDS (Single words for fallback matching)
-        self.keywords = {
-            "TRANSLATION": ["translate", "translation", "decipher", "language", "read", "written"],
-            "NAVIGATION": ["navigate", "navigation", "route", "direction", "map", "gps", "guide", "way"],
-            "FACE_RECOGNITION": ["face", "recognize", "identity", "person", "who"],
-            # "FACE_ENROLLMENT": ["enroll", "register", "remember", "save", "add"],  # Disabled
-            "OBJECT_DETECTION": ["detect", "scan", "object", "item", "thing", "see", "describe"]
-        }
-
-    def _classify_with_rules(self, text: str) -> Tuple[str, bool]:
-        """
-        Rule-based classification with uncertainty detection.
-        
-        Returns:
-            Tuple of (intent, is_uncertain)
-            - intent: The predicted intent
-            - is_uncertain: True if confidence is low
-        """
-        clean_text = text.lower().strip()
-
-        # --- STEP 1: Check Strict Phrases (High Confidence) ---
-        for intent, phrases in self.strict_rules.items():
-            for phrase in phrases:
-                if phrase in clean_text:
-                    return intent, False  # High confidence match
-
-        # --- STEP 2: Keyword Matching (Lower Confidence) ---
-        if nlp:
-            doc = nlp(clean_text)
-            tokens = [token.lemma_ for token in doc]
-        else:
-            tokens = clean_text.split()
-
-        # Count keyword matches for each intent
-        match_counts = {}
-        for intent_name, keywords in self.keywords.items():
-            count = sum(1 for w in tokens if w in keywords)
-            if count > 0:
-                match_counts[intent_name] = count
-
-        # If we have matches, pick the highest
-        if match_counts:
-            best_intent = max(match_counts, key=match_counts.get)
-            
-            # Uncertain if multiple intents have similar scores
-            max_count = match_counts[best_intent]
-            competing_intents = [i for i, c in match_counts.items() if c == max_count]
-            
-            if len(competing_intents) > 1:
-                return "UNCERTAIN", True  # Multiple matches - ambiguous
-            else:
-                return best_intent, False  # Clear winner
-
-        # --- STEP 3: No matches - might need Gemini ---
-        return "ASSISTANT", False  # Default to assistant (not uncertain, just chat)
+        # Load keyword patterns from config
+        self.temporal_keywords = settings.TEMPORAL_KEYWORDS
+        self.position_keywords = settings.POSITION_KEYWORDS
 
     async def _classify_with_gemini(self, text: str) -> str:
         """
@@ -127,7 +36,8 @@ class IntentRouter:
 - STOP_NAVIGATION (for stopping, canceling, or ending active navigation)
 - TRANSLATION (for reading text, translating, OCR requests)
 - FACE_RECOGNITION (for identifying people, faces)
-- OBJECT_DETECTION (for identifying objects, things in view)
+- OBJECT_DETECTION (for identifying objects, things in view, starting object detection or scanning)
+- STOP_OBJECT_DETECTION (for stopping, canceling, or ending active object detection or environment scanning)
 - ASSISTANT (for general chat, questions, other requests)
 
 User query: "{text}"
@@ -141,7 +51,7 @@ Response format: Return ONLY the category name, nothing else."""
             intent = response.text.strip().upper()
             
             # Validate response
-            valid_intents = ["NAVIGATION", "STOP_NAVIGATION", "TRANSLATION", "FACE_RECOGNITION", "OBJECT_DETECTION", "ASSISTANT"]
+            valid_intents = ["NAVIGATION", "STOP_NAVIGATION", "TRANSLATION", "FACE_RECOGNITION", "OBJECT_DETECTION", "STOP_OBJECT_DETECTION", "ASSISTANT"]
             if intent in valid_intents:
                 return intent
             else:
@@ -153,19 +63,114 @@ Response format: Return ONLY the category name, nothing else."""
 
     async def predict_intent(self, text: str) -> str:
         """
-        HYBRID APPROACH: Fast rule-based classification with Gemini fallback.
+        Classify user intent using Gemini.
+        """
+        return await self._classify_with_gemini(text)
+
+    def has_temporal_keywords(self, text: str) -> bool:
+        """
+        Layer 1: Check for temporal keywords (time-sensitive indicators).
+        Fast pattern matching using keyword list.
+        
+        Examples:
+        - "What's the latest AI news?" → True
+        - "Tell me current weather" → True
+        - "How do I cook rice?" → False
+        """
+        text_lower = text.lower()
+        for keyword in self.temporal_keywords:
+            if keyword.lower() in text_lower:
+                print(f"📅 Temporal keyword detected: '{keyword}'")
+                return True
+        return False
+    
+    def has_position_keywords(self, text: str) -> bool:
+        """
+        Layer 2: Check for position/role keywords (who is X).
+        Fast pattern matching for queries about positions/roles.
+        
+        Examples:
+        - "Who is the PM of India?" → True
+        - "Who is the CM of Maharashtra?" → True
+        - "What is gravity?" → False
+        """
+        text_lower = text.lower()
+        for keyword in self.position_keywords:
+            if keyword.lower() in text_lower:
+                print(f"👤 Position keyword detected: '{keyword}'")
+                return True
+        return False
+    
+    async def _classify_needs_search(self, text: str) -> bool:
+        """
+        Layer 3: Use Gemini to classify if uncertain cases need web search.
+        Only called if Layers 1 & 2 didn't match.
+        
+        This handles edge cases like:
+        - "What is the current population of India?"
+        - "How much is Bitcoin worth right now?"
+        - "Is Corona still spreading?"
+        """
+        prompt = f"""Determine if this query requires real-time web information to answer accurately.
+Return YES if the question needs current/real-time data, NO if it's general knowledge.
+
+Query: "{text}"
+
+Examples of YES: "What's Bitcoin's current price?" "Is it raining in Delhi?" "Current US President?"
+Examples of NO: "How do I cook rice?" "What is photosynthesis?" "Explain quantum mechanics"
+
+Response: Return ONLY 'YES' or 'NO'"""
+
+        try:
+            response = await self.client.aio.models.generate_content(
+                model=self.model_name, contents=prompt
+            )
+            answer = response.text.strip().upper()
+            is_needed = "YES" in answer
+            if is_needed:
+                print(f"🔍 Layer 3 (Gemini): Web search needed for: {text[:50]}...")
+            return is_needed
+        except Exception as e:
+            print(f"⚠️ Layer 3 classification failed: {e}, defaulting to NO")
+            return False
+    
+    async def needs_web_search(self, query: str) -> bool:
+        """
+        Main method: Determine if query needs web search using 3-layer detection.
         
         Flow:
-        1. Try rule-based classification (~10ms)
-        2. If uncertain, use Gemini (~800ms)
-        3. Return final intent
+        1. Check temporal keywords (fast)
+        2. Check position keywords (fast)
+        3. Ask Gemini for uncertain cases (slower)
+        
+        Returns:
+            True if web search needed, False otherwise
         """
-        # Fast path: Rule-based classification
-        intent, is_uncertain = self._classify_with_rules(text)
+        print(f"\n🔎 [WebSearch Check] Analyzing query: {query}")
         
-        # Slow path: Only for uncertain cases
-        if is_uncertain:
-            print(f"🤔 Uncertain classification for: '{text}', asking Gemini...")
-            intent = await self._classify_with_gemini(text)
+        # Layer 1: Temporal keywords
+        layer1_match = self.has_temporal_keywords(query)
+        if layer1_match:
+            print(f"✅ [Layer 1] Temporal keywords detected → Web search NEEDED")
+            return True
+        else:
+            print(f"❌ [Layer 1] No temporal keywords")
         
-        return intent
+        # Layer 2: Position/role keywords
+        layer2_match = self.has_position_keywords(query)
+        if layer2_match:
+            print(f"✅ [Layer 2] Position keywords detected → Web search NEEDED")
+            return True
+        else:
+            print(f"❌ [Layer 2] No position keywords")
+        
+        # Layer 3: Gemini classification for uncertain cases
+        print(f"🔄 [Layer 3] Asking Gemini if this needs web search...")
+        layer3_result = await self._classify_needs_search(query)
+        
+        if layer3_result:
+            print(f"✅ [Layer 3] Gemini says YES → Web search NEEDED\n")
+        else:
+            print(f"❌ [Layer 3] Gemini says NO → Direct Gemini only\n")
+        
+        return layer3_result

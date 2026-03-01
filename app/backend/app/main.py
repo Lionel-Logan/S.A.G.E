@@ -2,6 +2,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api.v1 import  translation, faces, objects, assistant, camera, location
+import logging
+
+# Configure logging to print to console
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI(

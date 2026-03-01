@@ -47,6 +47,9 @@ class TranslateService:
             Voice-friendly translation result
         """
         try:
+            if not text or not text.strip():
+                return "There's no text to translate."
+
             # Detect source language
             source_lang = await self.translator.detect_language(text)
             
@@ -92,16 +95,20 @@ class TranslateService:
             
             # Step 2: Detect source language
             source_lang = await self.translator.detect_language(extracted_text)
+            print(f"Detected language: {source_lang}")
             
             # Step 3: Translate to English
             if source_lang == "en":
                 return f"The text says: {extracted_text}"
             
             translated_text = await self.translator.translate(extracted_text, target_lang, source_lang)
+            print(f"Translated text: {translated_text}")
             
             # Voice-friendly output format (always English)
             return f"The text says: {translated_text}"
             
         except Exception as e:
             print(f"Image translation error: {e}")
+            import traceback
+            traceback.print_exc()
             return f"Image translation failed: {str(e)}"

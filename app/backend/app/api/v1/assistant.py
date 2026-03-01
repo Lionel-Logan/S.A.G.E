@@ -12,6 +12,7 @@ from app.services.gemini_service import GeminiService
 from app.services.vision_service import VisionService
 from app.services.navigation_service import NavigationService
 from app.services.translate_service import TranslateService
+from app.services.web_search_service import get_web_search_service
 from app.services.object_detection_session import get_detection_session
 from app.services.navigation_session import get_navigation_session_manager
 from app.core.connections import send_command_to_any_device
@@ -80,7 +81,8 @@ intent_router = IntentRouter()
 gemini_service = GeminiService()
 vision_service = VisionService()
 navigation_service = NavigationService()
-translate_service = TranslateService() # <--- INITIALIZED THIS
+translate_service = TranslateService()
+web_search_service = get_web_search_service()  # Initialize at startup so we see any errors
 
 @router.post("/ask", response_model=AssistantResponse)
 async def ask_assistant(request: AssistantRequest):
@@ -332,34 +334,36 @@ async def ask_assistant(request: AssistantRequest):
         #     # Send object detection response to TTS (both continuous control and single-shot)
         #     await _send_to_tts(response_text)
 
+        elif intent == "STOP_OBJECT_DETECTION":
+            action_type = "vision"
+
+            from app.services.continuous_object_detection_service import get_continuous_detection_service
+            detection_service = get_continuous_detection_service()
+
+            result = await detection_service.stop_continuous_detection()
+
+            if result.get("success"):
+                images_processed = result.get("images_processed", 0)
+                response_text = f"Object detection stopped. I processed {images_processed} images."
+            else:
+                response_text = f"Failed to stop object detection: {result.get('error', 'Unknown error')}"
+
+            await _send_to_tts(response_text)
+
         elif intent == "OBJECT_DETECTION":
             action_type = "vision"
-            
-            # Check if this is a start/stop command
-            query_lower = request.query.lower()
-            
+
             # Import continuous detection service
             from app.services.continuous_object_detection_service import get_continuous_detection_service
             detection_service = get_continuous_detection_service()
-            
-            if "stop" in query_lower or "end" in query_lower:
-                # Stop continuous object detection
-                result = await detection_service.stop_continuous_detection()
-                
-                if result.get("success"):
-                    images_processed = result.get("images_processed", 0)
-                    response_text = f"Object detection stopped. I processed {images_processed} images."
-                else:
-                    response_text = f"Failed to stop object detection: {result.get('error', 'Unknown error')}"
-            
-            elif "start" in query_lower or "begin" in query_lower or "scanning" in query_lower:
-                # Start continuous object detection
-                result = await detection_service.start_continuous_detection(interval_seconds=2.0)
-                
-                if result.get("success"):
-                    response_text = "Starting object detection. I'll tell you what I see every few seconds. Say 'stop object detection' when you're done."
-                else:
-                    response_text = f"Failed to start object detection: {result.get('error', 'Unknown error')}"
+
+            # Start continuous object detection
+            result = await detection_service.start_continuous_detection(interval_seconds=2.0)
+
+            if result.get("success"):
+                response_text = "Starting object detection. I'll tell you what I see every few seconds. Say 'stop object detection' when you're done."
+            else:
+                response_text = f"Failed to start object detection: {result.get('error', 'Unknown error')}"
             
             # else:
             #     # Single-shot detection (capture one image and detect)
@@ -402,9 +406,31 @@ async def ask_assistant(request: AssistantRequest):
             await _send_to_tts(response_text)
 
         else:
-            # Default to Gemini (Chat)
+            # Default to ASSISTANT: General chat with optional web search
             action_type = "chat"
-            response_text = await gemini_service.ask(request.query)
+            
+            # Check if web search is needed using 3-layer detection
+            needs_search = await intent_router.needs_web_search(request.query)
+            
+            if needs_search:
+                # Layer detected: Temporal keywords, position keywords, or factual query
+                print(f"🔍 Web search triggered for: {request.query}")
+                
+                # Get web search results (using pre-initialized service)
+                search_results = await web_search_service.search(request.query, num_results=5)
+                
+                if search_results:
+                    # Synthesize answer using search results
+                    response_text = await gemini_service.ask_with_search(request.query, search_results)
+                    print(f"✅ Response synthesized using {len(search_results)} search results")
+                else:
+                    # Search failed, fallback to direct Gemini
+                    print(f"⚠️ No search results found, falling back to direct Gemini")
+                    response_text = await gemini_service.ask(request.query)
+            else:
+                # No web search needed - use direct Gemini
+                print(f"💬 Using direct Gemini for: {request.query}")
+                response_text = await gemini_service.ask(request.query)
             
             # Send chat response to TTS
             await _send_to_tts(response_text)

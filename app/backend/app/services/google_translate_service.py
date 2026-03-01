@@ -30,21 +30,30 @@ class GoogleTranslateService:
         Returns:
             Language code (e.g., 'en', 'es', 'fr')
         """
+        if not text or not text.strip():
+            return "en"  # Nothing to detect
+
         try:
+            clean_text = text.strip()
+            print(f"🔍 Detecting language for text (len={len(clean_text)}): {clean_text[:100]}")
+            
             response = await self.client.post(
                 f"{self.BASE_URL}/detect",
                 params={"key": self.api_key},
-                json={"q": text}
+                json={"q": clean_text}
             )
             response.raise_for_status()
             data = response.json()
             detections = data.get("data", {}).get("detections", [[]])
             if detections and detections[0]:
-                return detections[0][0].get("language", "en")
+                lang = detections[0][0].get("language", "en")
+                print(f"✅ Detected language: {lang}")
+                return lang
             return "en"
             
         except Exception as e:
-            print(f"Language detection error: {e}")
+            print(f"❌ Language detection error: {e}")
+            print(f"   Text was: {text[:100]}")
             return "en"  # Fallback to English
     
     async def translate(

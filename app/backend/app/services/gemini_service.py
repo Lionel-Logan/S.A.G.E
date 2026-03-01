@@ -1,20 +1,29 @@
 from google import genai
+from google.oauth2 import service_account
 from app.config import settings
 from app.core.utils import decode_image
 import PIL.Image
 import cv2
 
+def _load_vertex_credentials():
+    """Load Vertex AI credentials from service account JSON."""
+    return service_account.Credentials.from_service_account_file(
+        settings.GOOGLE_VISION_CREDENTIALS,
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+
 class GeminiService:
     def __init__(self):
-        # Authenticate using API key
-        api_key = settings.GEMINI_API_KEY
-        key_preview = f"{api_key[:10]}...{api_key[-4:]}" if len(api_key) > 14 else "(too short)"
-        print(f"🔑 Gemini API key loaded: {key_preview}")
-        self.client = genai.Client(api_key=api_key)
-        # Using gemini-2.0-flash
+        # Authenticate using service account credentials
+        self.client = genai.Client(
+            vertexai=True,
+            project=settings.GOOGLE_CLOUD_PROJECT,
+            location=settings.GOOGLE_CLOUD_LOCATION,
+            credentials=_load_vertex_credentials()
+        )
         self.model_name = 'gemini-2.5-flash'
-        print(f"✅ Gemini initialized with model: {self.model_name}")
-        print(f"🔑 Auth: API key")
+        print(f"✅ Gemini initialized via Vertex AI (project={settings.GOOGLE_CLOUD_PROJECT}, location={settings.GOOGLE_CLOUD_LOCATION})")
+        print(f"🔑 Auth: Service account ({settings.GOOGLE_VISION_CREDENTIALS})")
         
         # System prompt defining S.A.G.E's personality and response style
         self.system_prompt = """You are S.A.G.E (Situational Awareness & Guidance Engine), an AI assistant for smartglasses.
@@ -78,6 +87,61 @@ Respond naturally and concisely."""
                 return "My API key seems to have an issue. Please contact support."
             else:
                 return "I'm having trouble connecting to my brain right now. Try again in a moment."
+
+    async def ask_with_search(self, query: str, search_results: list) -> str:
+        """
+        Ask Gemini a question using real-time web search results.
+        Synthesizes answer based on latest information from search results.
+        
+        Args:
+            query: User's question
+            search_results: List of search result dicts with keys: title, snippet, url, published_date
+        
+        Returns:
+            Gemini's synthesized response with citations
+        """
+        try:
+            # Format search results into a readable string
+            sources_text = "Recent sources:\n"
+            for i, result in enumerate(search_results, 1):
+                date_str = f" ({result.get('published_date', 'N/A')})" if result.get('published_date') != 'N/A' else ""
+                sources_text += f"{i}. {result.get('title', 'No title')}{date_str}\n"
+                sources_text += f"   URL: {result.get('url', '')}\n"
+                sources_text += f"   Snippet: {result.get('snippet', '')}\n\n"
+            
+            # Build prompt with search results
+            prompt = f"""{self.system_prompt}
+
+You have access to recent web search results. Use these to provide the most current and accurate answer.
+
+{sources_text}
+
+User query: {query}
+
+Based on the sources above, provide a helpful and accurate answer. Be conversational and cite the sources when relevant.
+Keep your answer brief (2-3 sentences) and suitable for voice output."""
+
+            # Generate response using Gemini
+            response = await self.client.aio.models.generate_content(
+                model=self.model_name, contents=prompt
+            )
+            response_text = response.text
+            
+            # Log successful response
+            print(f"🤖 Gemini Response (with search): {response_text[:200]}{'...' if len(response_text) > 200 else ''}")
+            
+            return response_text
+        except Exception as e:
+            error_str = str(e)
+            print(f"🔥 Gemini Search Error: {error_str}")
+            
+            # Handle errors similarly to ask()
+            if "429" in error_str or "quota" in error_str.lower() or "rate limit" in error_str.lower():
+                return "I've reached my thinking limit for now. Please try again in a minute."
+            elif "401" in error_str or "invalid" in error_str.lower():
+                return "My API key seems to have an issue. Please contact support."
+            else:
+                return "I'm having trouble connecting my search results to my brain. Try again in a moment."
 
         # 👇 THIS IS THE METHOD YOU MUST HAVE FOR YOUR CODE TO WORK 👇
     async def ask_with_image(self, prompt: str, base64_image: str) -> str:
