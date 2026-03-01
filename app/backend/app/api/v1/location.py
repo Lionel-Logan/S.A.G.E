@@ -7,15 +7,14 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from typing import Dict, Optional, List
 import json
+import uuid
 import httpx
 from datetime import datetime
 from app.config import settings
 from app.services.navigation_session import get_navigation_session_manager
+from app.core.connections import active_connections
 
 router = APIRouter(prefix="/location", tags=["Location"])
-
-# Store active WebSocket connections
-active_connections: Dict[str, WebSocket] = {}
 
 
 # HTTP Models for fallback endpoint
@@ -120,27 +119,22 @@ async def location_websocket(websocket: WebSocket, device_id: str):
                     
                     print(f"🧭 Navigation result: {nav_result}")
                     
-                    # Send navigation update back to frontend
-                    response = {
-                        "type": "navigation_update",
-                        "status": "ok",
-                        "navigation_active": True,
-                        "navigation_status": session.status,
-                        "destination": session.destination,
-                        "current_step": session.current_step_index,
-                        "total_steps": len(session.steps_with_coords) if session.steps_with_coords else 0,
-                    }
-                    
-                    # Add navigation instruction if available
-                    if nav_result and nav_result.get("instruction"):
-                        response["instruction"] = nav_result["instruction"]
-                        response["distance_to_next"] = nav_result.get("distance_to_next", 0)
-                        response["duration_to_next"] = nav_result.get("duration_to_next", 0)
-                        
-                        # Send TTS instruction
+                    # TTS fires ONLY at actual turn points — when should_speak=True
+                    # (proximity threshold crossed, not on every 3s GPS poll)
+                    if nav_result and nav_result.get("should_speak") and nav_result.get("instruction"):
+                        print(f"📢 Speaking instruction: {nav_result['instruction']}")
                         await _send_to_tts(nav_result["instruction"])
-                    
-                    await websocket.send_json(response)
+
+                    # If destination reached, tell the frontend to stop sending GPS
+                    if nav_result and nav_result.get("status") == "arrived":
+                        print("🎯 Navigation complete — sending STOP_LOCATION_SHARING to frontend")
+                        await websocket.send_json({
+                            "command": "STOP_LOCATION_SHARING",
+                            "request_id": str(uuid.uuid4())
+                        })
+                    else:
+                        # Silent ack — frontend only sends GPS, no nav data needed back
+                        await websocket.send_json({"type": "ack", "status": "ok"})
                     
                 else:
                     # No active navigation, just acknowledge

@@ -14,6 +14,7 @@ from app.services.navigation_service import NavigationService
 from app.services.translate_service import TranslateService
 from app.services.object_detection_session import get_detection_session
 from app.services.navigation_session import get_navigation_session_manager
+from app.core.connections import send_command_to_any_device
 from app.config import settings
 
 router = APIRouter(prefix="/assistant", tags=["AI Assistant"])
@@ -173,7 +174,17 @@ async def ask_assistant(request: AssistantRequest):
                 # Create navigation session
                 nav_manager = get_navigation_session_manager()
                 nav_manager.start_navigation(destination)
-                
+
+                # Command the frontend app to start streaming GPS via WebSocket
+                # The frontend's LocationStreamManager handles START_LOCATION_SHARING
+                # and begins sending location_update messages every 3s / 5m
+                sent = await send_command_to_any_device({
+                    "command": "START_LOCATION_SHARING",
+                    "request_id": str(uuid.uuid4())
+                })
+                if not sent:
+                    print("⚠️ No app connected via WebSocket — GPS polling must be started manually")
+
                 # Validate if location coordinates are valid and provided in the request
                 # Coordinates must be non-zero and within valid GPS ranges
                 has_valid_location = (
@@ -218,14 +229,20 @@ async def ask_assistant(request: AssistantRequest):
 
         elif intent == "STOP_NAVIGATION":
             action_type = "navigation"
-            
+
             # Stop active navigation session
             nav_manager = get_navigation_session_manager()
             nav_manager.stop_navigation()
-            
+
+            # Command the frontend to stop sending GPS coordinates
+            await send_command_to_any_device({
+                "command": "STOP_LOCATION_SHARING",
+                "request_id": str(uuid.uuid4())
+            })
+
             response_text = "Navigation stopped."
             navigation_data = None
-            
+
             # Send response to TTS
             await _send_to_tts(response_text)
 

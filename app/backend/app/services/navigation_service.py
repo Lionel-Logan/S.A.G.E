@@ -1,16 +1,18 @@
+import re
 import httpx
 import math
 from datetime import datetime, timedelta
+from app.config import settings
 
 class NavigationService:
     def __init__(self):
-        # 1. The Search Engine (Finds coordinates)
-        self.geocoder_url = "https://nominatim.openstreetmap.org/search"
-        
-        # 2. The Router (Finds the path)
-        self.router_url = "http://router.project-osrm.org/route/v1/foot"
-        
-        # 3. API timeout settings
+        # Google Maps Platform REST endpoints
+        # Places API (New) - Text Search (POST)
+        self.places_url = "https://places.googleapis.com/v1/places:searchText"
+        # Legacy Directions API (GET) - still active for this project
+        self.directions_url = "https://maps.googleapis.com/maps/api/directions/json"
+
+        # API timeout settings
         self.timeout = 30.0  # 30 seconds for API calls
 
     def _validate_coordinates(self, lat: float, lon: float) -> bool:
@@ -75,161 +77,140 @@ class NavigationService:
     
     async def get_coordinates(self, place_name: str, user_lat: float = None, user_lon: float = None):
         """
-        Geocode a place name to coordinates using Nominatim.
-        Prioritizes results near user's current location.
-        
-        Args:
-            place_name: Location name to search for
-            user_lat: User's current latitude (for proximity bias)
-            user_lon: User's current longitude (for proximity bias)
-            
+        Geocode a place name to coordinates using Places API (New) — Text Search.
+        Uses POST with X-Goog-Api-Key header and X-Goog-FieldMask.
+        Prioritizes results near user's current location via locationBias circle.
+
         Returns:
             Tuple of (lon, lat) or None if not found
         """
-        params = {
-            "q": place_name,
-            "format": "json",
-            "limit": 1,
-            "addressdetails": 1
+        headers = {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": settings.GOOGLE_MAPS_API_KEY,
+            "X-Goog-FieldMask": "places.location"
         }
-        
-        # Add proximity bias if user location is available
+
+        body = {"textQuery": place_name}
+
+        # Bias results within 50km of user's current location
         if user_lat is not None and user_lon is not None:
-            # Nominatim prioritizes results near these coordinates
-            params["lat"] = user_lat
-            params["lon"] = user_lon
-            
-            # Optional: Add viewbox to restrict search area (50km radius)
-            # This ensures we find the NEAREST location
-            params["viewbox"] = f"{user_lon-0.5},{user_lat-0.5},{user_lon+0.5},{user_lat+0.5}"
-            params["bounded"] = 1  # Restrict results to viewbox
-        
+            body["locationBias"] = {
+                "circle": {
+                    "center": {"latitude": user_lat, "longitude": user_lon},
+                    "radius": 50000.0
+                }
+            }
+
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.get(self.geocoder_url, params=params)
+                resp = await client.post(self.places_url, json=body, headers=headers)
                 resp.raise_for_status()
                 data = resp.json()
-            
-            if data and len(data) > 0:
-                result = data[0]
-                lon = float(result["lon"])
-                lat = float(result["lat"])
-                return (lon, lat)
-            else:
+
+            places = data.get("places", [])
+            if not places:
+                print(f"⚠️ Places API (New): No results for '{place_name}'")
                 return None
-                
+
+            location = places[0]["location"]
+            lat = location["latitude"]
+            lon = location["longitude"]
+            print(f"📍 Places API found: {place_name} → ({lat:.6f}, {lon:.6f})")
+            return (lon, lat)
+
         except httpx.TimeoutException:
-            print(f"⚠️ Geocoding timeout for: {place_name}")
+            print(f"⚠️ Places API timeout for: {place_name}")
             return None
         except Exception as e:
-            print(f"⚠️ Geocoding error: {e}")
+            print(f"⚠️ Places API error: {e}")
             return None
     
     async def get_directions(self, start_lon: float, start_lat: float, destination_query: str):
         """
         Returns a dictionary with route metadata and a FULL LIST of steps.
-        Enhanced with validation, error handling, and voice-friendly formatting.
+        Uses Google Directions API for walking routes with natural language instructions.
+        Output shape is identical to before — navigation_session.py is unchanged.
         """
         # Validate GPS coordinates
         if not self._validate_coordinates(start_lat, start_lon):
             return {"error": "Invalid GPS coordinates. Please check your location settings."}
-        
+
         # Validate destination
         if not destination_query or not destination_query.strip():
             return {"error": "Please provide a destination."}
-        
-        # Get destination coordinates with proximity bias (finds NEAREST location)
+
+        # Step 1: Geocode destination using Places API (nearest match to user)
         dest_coords = await self.get_coordinates(destination_query, start_lat, start_lon)
         if not dest_coords:
             return {"error": f"I couldn't find '{destination_query}'. Please try a different location name."}
 
         dest_lon, dest_lat = dest_coords
         print(f"🎯 Destination found: {destination_query} at ({dest_lat:.6f}, {dest_lon:.6f})")
-        
-        route_url = f"{self.router_url}/{start_lon},{start_lat};{dest_lon},{dest_lat}"
-        print(f"🔗 OSRM Request: {route_url}")
-        
-        params = {"steps": "true", "geometries": "geojson", "overview": "false"}
+
+        # Step 2: Fetch walking route from Google Directions API
+        params = {
+            "origin": f"{start_lat},{start_lon}",
+            "destination": f"{dest_lat},{dest_lon}",
+            "mode": "walking",
+            "key": settings.GOOGLE_MAPS_API_KEY
+        }
+        print(f"🔗 Directions API Request: {start_lat},{start_lon} → {dest_lat},{dest_lon}")
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.get(route_url, params=params)
+                resp = await client.get(self.directions_url, params=params)
                 resp.raise_for_status()
                 data = resp.json()
 
-            if data.get("code") != "Ok" or not data.get("routes"):
+            status = data.get("status")
+            if status != "OK" or not data.get("routes"):
+                print(f"⚠️ Directions API status: {status}")
                 return {"error": f"I couldn't find a walking route to {destination_query}. It might be too far or unreachable on foot."}
 
-            # Extract Route Data (best route is the first one)
-            route = data["routes"][0]
-            legs = route["legs"][0]
+            # Extract route data (best route is first)
+            legs = data["routes"][0]["legs"][0]
             steps = legs["steps"]
 
-            # Parse ALL steps into a readable list with voice-friendly formatting
+            # Parse ALL steps — Google provides pre-built natural language instructions
             parsed_steps = []
-            for idx, step in enumerate(steps):
-                # 1. Instruction (e.g., "turn right")
-                maneuver = step["maneuver"]
-                action = maneuver.get("type", "move").replace("-", " ")
-                modifier = maneuver.get("modifier", "").replace("_", " ")
-                
-                # 2. Extract GPS coordinates for this instruction point
-                # OSRM provides maneuver location as [longitude, latitude]
-                maneuver_location = maneuver.get("location", [None, None])
-                maneuver_lon = maneuver_location[0]
-                maneuver_lat = maneuver_location[1]
-                
-                # 3. Road Name (expand abbreviations for TTS)
-                road = step.get("name", "the path")
-                if road == "": 
-                    road = "the path"
-                else:
-                    # Expand common abbreviations
-                    road = road.replace(" Rd", " Road")
-                    road = road.replace(" St", " Street")
-                    road = road.replace(" Ave", " Avenue")
-                    road = road.replace(" Blvd", " Boulevard")
-                
-                # 4. Distance for this step
-                dist = step.get("distance", 0)
+            for step in steps:
+                # Strip HTML tags from Google's instruction
+                # e.g. "Turn <b>right</b> onto <b>MG Road</b>" → "Turn right onto MG Road"
+                raw_instruction = step.get("html_instructions", "Continue")
+                instruction = re.sub(r'<[^>]+>', '', raw_instruction)
+                instruction = instruction.replace("&nbsp;", " ").strip()
+
+                # GPS coordinates — start_location is always present in Directions API
+                lat = step["start_location"]["lat"]
+                lon = step["start_location"]["lng"]
+
+                # Distance in meters
+                dist = step["distance"]["value"]
                 dist_formatted = self._format_distance(dist)
-                
-                # Construct natural language sentence with distance context
-                if action == "arrive":
-                    instruction = "You have arrived at your destination."
-                elif action == "depart":
-                    instruction = f"Head {modifier} on {road}."
-                else:
-                    # Add distance context for better navigation
-                    if modifier:
-                        instruction = f"In {dist_formatted['text']}, {action} {modifier} onto {road}."
-                    else:
-                        instruction = f"Continue on {road} for {dist_formatted['text']}."
-                
+
                 parsed_steps.append({
                     "instruction": instruction,
-                    "distance_meters": round(dist),
+                    "distance_meters": dist,
                     "distance_text": dist_formatted["text"],
-                    "lat": maneuver_lat,  # GPS coordinate for proximity checking
-                    "lon": maneuver_lon
+                    "lat": lat,
+                    "lon": lon
                 })
 
-            # Format total distance and time
-            total_distance = route["distance"]
-            total_duration = route["duration"]
-            
+            # Total route stats
+            total_distance = legs["distance"]["value"]   # meters
+            total_duration = legs["duration"]["value"]   # seconds
+
             distance_formatted = self._format_distance(total_distance)
             time_formatted = self._format_time(total_duration)
-            
-            print(f"\n📊 OSRM Route Summary:")
+
+            print(f"\n📊 Google Directions Route Summary:")
             print(f"   Total Distance: {distance_formatted['text']} ({total_distance:.0f} meters)")
             print(f"   Estimated Time: {time_formatted['text']} (ETA: {time_formatted['eta']})")
             print(f"   Number of Steps: {len(parsed_steps)}")
 
-            # Return the RICH DATA object with formatted values
             return {
                 "destination": destination_query,
-                "total_distance_meters": round(total_distance),
+                "total_distance_meters": total_distance,
                 "total_distance": distance_formatted["value"],
                 "distance_unit": distance_formatted["unit"],
                 "distance_text": distance_formatted["text"],
@@ -239,12 +220,12 @@ class NavigationService:
                 "steps": parsed_steps,
                 "step_count": len(parsed_steps)
             }
-            
+
         except httpx.TimeoutException:
             return {"error": "Navigation request timed out. Please try again."}
         except httpx.HTTPError as e:
-            print(f"⚠️ Routing HTTP error: {e}")
+            print(f"⚠️ Directions API HTTP error: {e}")
             return {"error": "Navigation service is temporarily unavailable. Please try again later."}
         except Exception as e:
-            print(f"⚠️ Routing error: {e}")
+            print(f"⚠️ Directions API error: {e}")
             return {"error": "An error occurred while finding the route. Please try again."}
