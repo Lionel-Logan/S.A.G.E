@@ -11,13 +11,19 @@ from typing import Optional, Dict, Any
 logger = logging.getLogger(__name__)
 
 # TTS Engine Configuration
-TTS_ENGINE = "pyttsx3"  # Offline text-to-speech engine
+TTS_ENGINE = "google_cloud"
+
+# Google Cloud TTS Configuration
+GOOGLE_APPLICATION_CREDENTIALS = "/home/sage/service_account.json"
+GOOGLE_TTS_LANGUAGE_CODE = "en-US"
+GOOGLE_TTS_VOICE_NAME = "en-US-Neural2-F"   # default; overridable via API
+GOOGLE_TTS_AUDIO_ENCODING = "LINEAR16"       # WAV — no extra decoder needed
 
 # Default Voice Settings (can be updated via API)
 DEFAULT_VOICE_SPEED = 175  # words per minute (100-300 recommended)
 DEFAULT_VOICE_VOLUME = 0.9  # 0.0 to 1.0
-DEFAULT_VOICE_GENDER = "female"  # male, female, neutral (used for auto-selection)
-DEFAULT_VOICE_ID = None  # System voice ID (None = auto-select based on gender)
+DEFAULT_VOICE_GENDER = "female"  # male, female, neutral
+DEFAULT_VOICE_ID = GOOGLE_TTS_VOICE_NAME  # Google voice name
 DEFAULT_VOICE_LANGUAGE = "en-US"  # Language code
 
 # Audio Output Configuration
@@ -26,8 +32,20 @@ AUDIO_FORMAT = "wav"
 
 # Performance Settings
 TTS_TIMEOUT = 30  # Maximum seconds for TTS operation
-ENABLE_TTS_CACHE = False  # Cache generated audio files (disabled by default)
-TTS_CACHE_DIR = "/tmp/sage_tts_cache"
+ENABLE_TTS_CACHE = True   # Cache synthesised audio by text hash (instant replay)
+TTS_CACHE_DIR = "/home/sage/sage/tts_cache"  # Persistent cache (survives reboots)
+TTS_CACHE_MAX_ENTRIES = 200  # Max cached phrases before LRU eviction
+
+# Phrases synthesised at startup so first playback is instant
+TTS_PREWARM_PHRASES = [
+    "I'm sorry, I didn't catch that. Could you repeat?",
+    "Processing your request.",
+    "I'm listening.",
+    "I'm not sure about that.",
+    "I couldn't connect to the server. Please try again.",
+    "Done.",
+    "Okay.",
+]
 
 # Persistence Settings
 CONFIG_PERSIST_FILE = "/home/sage/sage/.sage/tts_settings.json"  # Persisted settings location

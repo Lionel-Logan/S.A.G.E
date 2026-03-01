@@ -32,6 +32,7 @@ class _LocationDebugScreenState extends State<LocationDebugScreen> {
   LocationUpdate? _latestLocation;
   final List<String> _locationLog = [];
   StreamSubscription<LocationUpdate>? _locationSubscription;
+  Timer? _refreshTimer;
   
   bool _isTracking = false;
   int _totalUpdates = 0;
@@ -41,12 +42,25 @@ class _LocationDebugScreenState extends State<LocationDebugScreen> {
   void initState() {
     super.initState();
     _listenToLocationUpdates();
+    _startRefreshTimer();
   }
 
   @override
   void dispose() {
     _locationSubscription?.cancel();
+    _refreshTimer?.cancel();
     super.dispose();
+  }
+
+  void _startRefreshTimer() {
+    // Refresh UI every second to update WebSocket status
+    _refreshTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        setState(() {
+          // Just trigger rebuild to show latest manager state
+        });
+      }
+    });
   }
 
   void _listenToLocationUpdates() {
@@ -107,6 +121,48 @@ class _LocationDebugScreenState extends State<LocationDebugScreen> {
     });
 
     _showSnackBar('⏹️ Location tracking stopped', Colors.orange);
+  }
+
+  Future<void> _startWebSocketSharing() async {
+    try {
+      setState(() {
+        _status = 'Starting WebSocket location sharing...';
+      });
+
+      await _manager.manualStart();
+
+      setState(() {
+        _status = 'WebSocket sharing active - sending updates to backend';
+      });
+
+      _showSnackBar('✅ WebSocket sharing started', Colors.purple);
+    } catch (e) {
+      setState(() {
+        _status = 'Error: $e';
+      });
+      _showSnackBar('❌ Error: $e', Colors.red);
+    }
+  }
+
+  Future<void> _stopWebSocketSharing() async {
+    try {
+      setState(() {
+        _status = 'Stopping WebSocket location sharing...';
+      });
+
+      await _manager.manualStop();
+
+      setState(() {
+        _status = 'WebSocket sharing stopped';
+      });
+
+      _showSnackBar('🛑 WebSocket sharing stopped', Colors.orange);
+    } catch (e) {
+      setState(() {
+        _status = 'Error: $e';
+      });
+      _showSnackBar('❌ Error: $e', Colors.red);
+    }
   }
 
   void _showSnackBar(String message, Color color) {
@@ -269,6 +325,31 @@ class _LocationDebugScreenState extends State<LocationDebugScreen> {
               _buildStatItem('Queue', _manager.queuedLocationsCount.toString()),
             ],
           ),
+          
+          // WebSocket Sharing Status
+          if (_manager.isSharing) ...[
+            const SizedBox(height: 12),
+            const Divider(color: Colors.white24),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.cloud_upload, color: AppTheme.purple, size: 16),
+                const SizedBox(width: 8),
+                const Text(
+                  'WebSocket Sharing: ',
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+                Text(
+                  'ACTIVE',
+                  style: TextStyle(
+                    color: AppTheme.purple,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -330,6 +411,63 @@ class _LocationDebugScreenState extends State<LocationDebugScreen> {
               ),
             ),
           ],
+        ),
+        
+        const SizedBox(height: 12),
+        
+        // WebSocket Sharing Controls
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppTheme.purple.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppTheme.purple.withOpacity(0.3)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '🌐 WebSocket Sharing (Manual Test)',
+                style: TextStyle(
+                  color: AppTheme.purple,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _manager.isSharing ? null : _startWebSocketSharing,
+                      icon: const Icon(Icons.cloud_upload, size: 18),
+                      label: const Text('Start Sharing', style: TextStyle(fontSize: 12)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.purple,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        disabledBackgroundColor: AppTheme.purple.withOpacity(0.3),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _manager.isSharing ? _stopWebSocketSharing : null,
+                      icon: const Icon(Icons.cloud_off, size: 18),
+                      label: const Text('Stop Sharing', style: TextStyle(fontSize: 12)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        disabledBackgroundColor: Colors.orange.withOpacity(0.3),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
         
         const SizedBox(height: 12),

@@ -21,7 +21,7 @@ class BackendConfig {
   
   /// Development/Local backend URL
   /// The FastAPI backend runs on port 8000
-  static const String localhostUrl = 'http://localhost:8000';
+  static const String localhostUrl = 'http://192.168.1.4:8000';
   
   /// Android emulator needs to use 10.0.2.2 instead of localhost
   static const String localhostAndroidEmulatorUrl = 'http://10.0.2.2:8000';
@@ -35,7 +35,7 @@ class BackendConfig {
   
   /// WebSocket endpoint for live location streaming
   /// Backend team will implement: ws://backend/ws/location/{device_id}
-  static const String websocketPath = '/ws/location';
+  static const String websocketPath = '/api/v1/location/ws';
   
   /// WebSocket reconnection settings
   static const int websocketMaxReconnectAttempts = 3;
@@ -56,11 +56,13 @@ class BackendConfig {
   /// Update every 3 seconds OR 5 meters, whichever comes first
   static const int movingModeUpdateIntervalSeconds = 3;
   static const double movingModeDistanceFilterMeters = 5.0;
+  static const int movingModeTimeoutSeconds = 10; // Max wait for GPS update when moving
   
   /// Stationary Mode (Battery Saver)
   /// Reduced frequency when user is not moving
   static const int stationaryModeUpdateIntervalSeconds = 20;
   static const double stationaryModeDistanceFilterMeters = 20.0;
+  static const int stationaryModeTimeoutSeconds = 30; // Max wait for GPS update when stationary
   
   /// Speed threshold to detect stationary vs moving (meters/second)
   /// 0.5 m/s = 1.8 km/h (slower than slow walking)

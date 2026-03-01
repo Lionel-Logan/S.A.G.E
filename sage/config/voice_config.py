@@ -18,7 +18,7 @@ CHUNK_SIZE = 512  # Frames per buffer
 AUDIO_FORMAT = "wav"  # File format for recordings
 
 # Recording Configuration
-SILENCE_THRESHOLD = 500  # Amplitude threshold for silence detection (adjust based on testing)
+SILENCE_THRESHOLD = 1000  # Amplitude threshold for silence detection (adjust based on testing)
 SILENCE_DURATION = 2.0  # Seconds of silence before stopping recording
 MAX_RECORDING_DURATION = 30  # Maximum recording length in seconds (safety limit)
 MIN_RECORDING_DURATION = 0.5  # Minimum recording length in seconds (filter out accidental triggers)
@@ -27,12 +27,14 @@ MIN_RECORDING_DURATION = 0.5  # Minimum recording length in seconds (filter out 
 WAKE_TONE_FILE = "/home/sage/audio/wake_tone.wav"  # Played when "Hey Sage" is detected
 END_TONE_FILE = "/home/sage/audio/end_tone.wav"  # Played when user stops speaking
 
-# Speech-to-Text Configuration (Vosk)
-VOSK_MODEL_PATH = "/home/sage/vosk-model-small-en-us-0.15"  # Download from https://alphacephei.com/vosk/models
-VOSK_MODEL_URL = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"  # Auto-download if missing
+# Speech-to-Text Configuration (Google Cloud Speech-to-Text)
+GOOGLE_APPLICATION_CREDENTIALS = "/home/sage/service_account.json"
+GOOGLE_STT_LANGUAGE_CODE = "en-IN"
+GOOGLE_STT_MODEL = "command_and_search"  # Optimised for short voice commands
+GOOGLE_STT_MAX_ALTERNATIVES = 1
 
 # Backend API Configuration
-BACKEND_API_URL = "http://192.168.1.12:8000/api/v1/assistant/ask"  # Mobile app backend endpoint
+BACKEND_API_URL = "http://192.168.1.10:8000/api/v1/assistant/ask"  # Mobile app backend endpoint
 BACKEND_TIMEOUT = 30  # Seconds to wait for backend response
 BACKEND_RETRY_ATTEMPTS = 2  # Number of retry attempts if backend fails
 

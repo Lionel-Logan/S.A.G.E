@@ -7,13 +7,13 @@ uvicorn[standard]==0.27.0
 
 # Voice Assistant Dependencies
 pvporcupine==3.0.0       # Wake word detection (Porcupine)
-vosk==0.3.45             # Offline speech-to-text
+google-cloud-speech>=2.21.0    # Cloud Speech-to-Text
 pyaudio==0.2.14          # Audio input/output
 numpy==1.26.3            # Array operations for audio processing
 requests==2.31.0         # HTTP requests to backend
 
 # Text-to-Speech
-pyttsx3==2.90            # Text-to-speech engine
+google-cloud-texttospeech>=2.16.0  # Cloud Text-to-Speech
 
 # Future dependencies (uncomment when needed):
 # python-multipart==0.0.6  # For file uploads (camera images)

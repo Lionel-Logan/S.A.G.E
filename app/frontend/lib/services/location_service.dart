@@ -266,18 +266,18 @@ class LocationService {
     switch (mode) {
       case LocationTrackingMode.moving:
         // High accuracy, frequent updates (Google Maps level)
-        return const LocationSettings(
+        return LocationSettings(
           accuracy: LocationAccuracy.high,
-          distanceFilter: 5, // meters (from BackendConfig.movingModeDistanceFilterMeters)
-          timeLimit: Duration(seconds: 3), // seconds (from BackendConfig.movingModeUpdateIntervalSeconds)
+          distanceFilter: BackendConfig.movingModeDistanceFilterMeters.toInt(),
+          timeLimit: Duration(seconds: BackendConfig.movingModeTimeoutSeconds),
         );
       
       case LocationTrackingMode.stationary:
         // Reduced frequency for battery saving
-        return const LocationSettings(
+        return LocationSettings(
           accuracy: LocationAccuracy.medium,
-          distanceFilter: 20, // meters (from BackendConfig.stationaryModeDistanceFilterMeters)
-          timeLimit: Duration(seconds: 20), // seconds (from BackendConfig.stationaryModeUpdateIntervalSeconds)
+          distanceFilter: BackendConfig.stationaryModeDistanceFilterMeters.toInt(),
+          timeLimit: Duration(seconds: BackendConfig.stationaryModeTimeoutSeconds),
         );
     }
   }

@@ -6,6 +6,7 @@ Listens for "Hey Sage" wake word
 
 import logging
 import struct
+import subprocess
 import pyaudio
 from typing import Optional, Callable
 
@@ -132,20 +133,46 @@ class WakeWordService:
         self.running = False
     
     def _get_input_device_index(self) -> Optional[int]:
-        """Get the input device index for the configured microphone"""
-        # Use PulseAudio device for automatic resampling
+        """Get the input device index for the configured microphone.
+        
+        Pins the PulseAudio default source to PULSEAUDIO_SOURCE (if configured)
+        before returning the 'pulse' virtual device index. This ensures the correct
+        physical microphone is always used regardless of what Bluetooth pairing
+        may have silently changed the PulseAudio default source to.
+        """
+        # Pin PulseAudio default source to the configured USB mic so that
+        # the 'pulse' virtual device always reads from the correct physical mic,
+        # regardless of what Bluetooth pairing may have changed it to.
+        if config.PULSEAUDIO_SOURCE:
+            try:
+                subprocess.run(
+                    ['pactl', 'set-default-source', config.PULSEAUDIO_SOURCE],
+                    check=True, capture_output=True
+                )
+                logger.info(f"Pinned PulseAudio default source to: {config.PULSEAUDIO_SOURCE}")
+            except subprocess.CalledProcessError as e:
+                logger.warning(
+                    f"Could not set PulseAudio source to '{config.PULSEAUDIO_SOURCE}': "
+                    f"{e.stderr.decode().strip()}"
+                )
+            except FileNotFoundError:
+                logger.warning("pactl not found; cannot pin PulseAudio source")
+
         try:
             for i in range(self.audio.get_device_count()):
                 device_info = self.audio.get_device_info_by_index(i)
                 if device_info.get('maxInputChannels') > 0:
                     device_name = device_info.get('name', '')
-                    # Prefer 'pulse' device for resampling support
+                    # Use 'pulse' virtual device (now pinned to the correct source above)
                     if device_name == 'pulse':
-                        logger.info(f"Using input device: {device_name} (with resampling)")
+                        logger.info(
+                            f"Using input device: {device_name} "
+                            f"(pinned to {config.PULSEAUDIO_SOURCE or 'PulseAudio default'})"
+                        )
                         return i
-            
+
             # Fallback to default
-            logger.warning("Could not find pulse device, using default")
+            logger.warning("Could not find pulse device, using system default")
             return None
         except Exception as e:
             logger.error(f"Error finding input device: {e}")

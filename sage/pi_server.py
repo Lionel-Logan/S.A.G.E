@@ -335,6 +335,7 @@ async def tts_speak(
     
     try:
         logger.info(f"TTS speak request: '{text[:50]}{'...' if len(text) > 50 else ''}'")
+        print(f"TTS speak request: ", text)
         
         success = tts_service.speak(text, blocking=blocking)
         
