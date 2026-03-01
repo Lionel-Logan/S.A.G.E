@@ -1,7 +1,13 @@
+import os
 import spacy
 from typing import Tuple
 import google.generativeai as genai
+from google.oauth2 import service_account
 from app.config import settings
+
+# Resolve service account path relative to the backend root
+_BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_SERVICE_ACCOUNT_PATH = os.path.join(_BACKEND_ROOT, settings.GOOGLE_VISION_CREDENTIALS)
 
 # Load the lightweight English model
 try:
@@ -12,8 +18,12 @@ except:
 
 class IntentRouter:
     def __init__(self):
-        # Initialize Gemini
-        genai.configure(api_key=settings.GEMINI_API_KEY)
+        # Authenticate using service account credentials
+        credentials = service_account.Credentials.from_service_account_file(
+            _SERVICE_ACCOUNT_PATH,
+            scopes=["https://www.googleapis.com/auth/generative-language"]
+        )
+        genai.configure(credentials=credentials)
         self.model_name = 'models/gemini-2.0-flash'
         self.model = genai.GenerativeModel(self.model_name)
         

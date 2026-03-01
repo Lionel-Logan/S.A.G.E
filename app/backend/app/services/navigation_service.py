@@ -144,7 +144,10 @@ class NavigationService:
             return {"error": f"I couldn't find '{destination_query}'. Please try a different location name."}
 
         dest_lon, dest_lat = dest_coords
+        print(f"🎯 Destination found: {destination_query} at ({dest_lat:.6f}, {dest_lon:.6f})")
+        
         route_url = f"{self.router_url}/{start_lon},{start_lat};{dest_lon},{dest_lat}"
+        print(f"🔗 OSRM Request: {route_url}")
         
         params = {"steps": "true", "geometries": "geojson", "overview": "false"}
 
@@ -217,6 +220,11 @@ class NavigationService:
             
             distance_formatted = self._format_distance(total_distance)
             time_formatted = self._format_time(total_duration)
+            
+            print(f"\n📊 OSRM Route Summary:")
+            print(f"   Total Distance: {distance_formatted['text']} ({total_distance:.0f} meters)")
+            print(f"   Estimated Time: {time_formatted['text']} (ETA: {time_formatted['eta']})")
+            print(f"   Number of Steps: {len(parsed_steps)}")
 
             # Return the RICH DATA object with formatted values
             return {

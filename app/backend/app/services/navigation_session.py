@@ -99,6 +99,25 @@ class NavigationSessionManager:
         print(f"✅ Route calculated: {len(self.active_session.steps_with_coords)} steps")
         print(f"   Distance: {route_data.get('distance_text', 'N/A')}")
         print(f"   Duration: {route_data.get('total_time_text', 'N/A')}")
+        print(f"   ETA: {route_data.get('eta', 'N/A')}")
+        
+        # Print all navigation instructions
+        print(f"\n🗺️  COMPLETE ROUTE INSTRUCTIONS:")
+        print(f"{'=' * 70}")
+        for i, step in enumerate(self.active_session.steps_with_coords, 1):
+            distance_km = step['distance_meters'] / 1000 if step['distance_meters'] >= 1000 else None
+            if distance_km:
+                dist_text = f"{distance_km:.1f} km"
+            else:
+                dist_text = f"{step['distance_meters']:.0f} m"
+            
+            coord_text = ""
+            if step.get('lat') and step.get('lon'):
+                coord_text = f" @ ({step['lat']:.6f}, {step['lon']:.6f})"
+            
+            print(f"   Step {i:2d}: {step['instruction']}")
+            print(f"           Distance: {dist_text}{coord_text}")
+        print(f"{'=' * 70}\n")
         
         # Return first instruction
         if self.active_session.steps_with_coords:

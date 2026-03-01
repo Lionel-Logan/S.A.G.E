@@ -1,2 +1,38 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# --- Primary Languages ---
+*.py linguist-language=Python
+*.dart linguist-language=Dart
+
+# --- Exclude documentation files ---
+*.md linguist-documentation
+*.pdf linguist-documentation
+*.docx linguist-documentation
+*.tex linguist-documentation
+*.txt linguist-documentation
+
+# --- Exclude diagrams & images ---
+*.png linguist-generated
+*.jpg linguist-generated
+*.jpeg linguist-generated
+*.svg linguist-generated
+*.drawio linguist-generated
+
+# --- Exclude dataset / model artifacts ---
+*.pt linguist-generated
+*.pth linguist-generated
+*.onnx linguist-generated
+*.tflite linguist-generated
+*.ckpt linguist-generated
+*.weights linguist-generated
+*.h5 linguist-generated
+
+# --- Exclude build / generated folders ---
+build/** linguist-generated
+dist/** linguist-generated
+android/** linguist-generated
+ios/** linguist-generated
+web/** linguist-generated
+__pycache__/** linguist-generated
+
+# --- Exclude lock files ---
+pubspec.lock linguist-generated
+package-lock.json linguist-generated

@@ -8,7 +8,11 @@ except ImportError:
 import io
 import os
 import base64
+from pathlib import Path
 from app.config import settings
+
+# Resolve backend root (the directory containing this package)
+BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 class OCRError(Exception):
@@ -21,9 +25,12 @@ class OCRService:
         if not VISION_AVAILABLE:
             raise OCRError("Google Cloud Vision is not installed. Install with: pip install google-cloud-vision")
         
-        # Explicitly tell Google where the key is
-        if settings.GOOGLE_VISION_CREDENTIALS:
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = settings.GOOGLE_VISION_CREDENTIALS
+        # Resolve credentials path relative to backend root if not absolute
+        creds_path = Path(settings.GOOGLE_VISION_CREDENTIALS)
+        if not creds_path.is_absolute():
+            creds_path = BACKEND_ROOT / creds_path
+        
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(creds_path)
         
         self.client = vision.ImageAnnotatorClient()
 

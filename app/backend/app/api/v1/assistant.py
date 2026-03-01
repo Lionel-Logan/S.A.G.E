@@ -170,15 +170,48 @@ async def ask_assistant(request: AssistantRequest):
             if not destination:
                 response_text = "Where would you like to go?"
             else:
-                # Create navigation session (waiting for location)
+                # Create navigation session
                 nav_manager = get_navigation_session_manager()
                 nav_manager.start_navigation(destination)
                 
-                # Inform user - route will be calculated when first location arrives via WebSocket
-                response_text = f"Starting navigation to {destination}. Getting your location..."
+                # Validate if location coordinates are valid and provided in the request
+                # Coordinates must be non-zero and within valid GPS ranges
+                has_valid_location = (
+                    request.lat is not None and 
+                    request.lon is not None and
+                    (request.lat != 0.0 or request.lon != 0.0) and  # Exclude (0,0) which is likely null/default
+                    -90 <= request.lat <= 90 and
+                    -180 <= request.lon <= 180
+                )
                 
-                # No navigation_data yet - will be calculated on first location update
-                navigation_data = None
+                if has_valid_location:
+                    print(f"📍 Using provided location: ({request.lat}, {request.lon})")
+                    
+                    # Calculate route immediately with provided coordinates
+                    result = await nav_manager.set_route(request.lat, request.lon)
+                    
+                    if result and "error" not in result:
+                        # Route calculated successfully
+                        route_data = nav_manager.active_session.route_data if nav_manager.active_session else None
+                        
+                        if route_data:
+                            response_text = f"Navigation started to {destination}. {route_data.get('total_distance_text', '')} away. {result.get('instruction', '')}"
+                            navigation_data = route_data
+                        else:
+                            response_text = f"Starting navigation to {destination}."
+                    else:
+                        # Route calculation failed
+                        error_msg = result.get("error", "Could not calculate route") if result else "Could not calculate route"
+                        response_text = f"Sorry, {error_msg}"
+                        navigation_data = None
+                else:
+                    # No valid location provided - wait for WebSocket location updates
+                    if request.lat == 0.0 and request.lon == 0.0:
+                        print("⏳ Received (0.0, 0.0) coordinates - ignoring and waiting for real location via WebSocket/polling...")
+                    else:
+                        print("⏳ No valid location provided in request, waiting for location via WebSocket/polling...")
+                    response_text = f"Starting navigation to {destination}. Waiting for your location..."
+                    navigation_data = None
             
             # Send navigation response to TTS
             await _send_to_tts(response_text)
@@ -339,19 +372,14 @@ async def ask_assistant(request: AssistantRequest):
             
             # ALWAYS translate to English (TTS can only read English properly)
             target_lang = "en"
-            
-            if request.image_data:
-                # Image translation: Gemini OCR → LibreTranslate
-                response_text = await translate_service.translate_image(request.image_data, target_lang)
+
+            # Always capture image from Pi camera → OCR → Google Translate
+            await _send_to_tts("Capturing image, please hold still.")
+            image_data = request.image_data or await _capture_image_from_pi()
+            if image_data:
+                response_text = await translate_service.translate_image(image_data, target_lang)
             else:
-                # Text translation: LibreTranslate only
-                # Extract text to translate by removing common translation command patterns
-                clean_query = request.query
-                clean_query = clean_query.replace("translate this:", "").replace("translate this", "")
-                clean_query = clean_query.replace("translate:", "").replace("translate", "")
-                clean_query = clean_query.replace("this:", "").replace("this", "")
-                clean_query = clean_query.strip()
-                response_text = await translate_service.translate_text(clean_query, target_lang)
+                response_text = "I couldn't capture an image from the camera. Please try again."
             
             # Send translation response to TTS
             await _send_to_tts(response_text)

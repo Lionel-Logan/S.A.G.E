@@ -203,7 +203,7 @@ face recognition workflow redesign, object detection stability
 
 ### Translation Module
 - Integrated TTS for translation results (both text and image translation)
-- Maintained hybrid OCR (Gemini) + translation (LibreTranslate) pipeline
+- Maintained hybrid OCR (Google Vision) + translation (Google Cloud Translate) pipeline
 
 ### Core Infrastructure
 - Created reusable helper functions: _capture_image_from_pi(), _send_to_tts(), _cleanup_expired_cache()
