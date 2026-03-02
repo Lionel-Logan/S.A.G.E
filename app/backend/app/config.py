@@ -33,9 +33,11 @@ class Settings(BaseSettings):
     GOOGLE_CLOUD_LOCATION: str = "asia-south1"  # Vertex AI region (Mumbai, India)
     GOOGLE_MAPS_API_KEY: str = ""  # Google Maps Platform (Directions API + Places API)
     
-    # Google Search API (uses API Key for authentication - not service account)
-    GOOGLE_SEARCH_API_KEY: str = ""  # Custom Search API Key
-    GOOGLE_SEARCH_ENGINE_ID: str = ""  # Custom Search Engine ID (CX)
+    # Web Search via SerpAPI (Google Search through SerpAPI)
+    SERPAPI_API_KEY: str = ""  # SerpAPI key for web search
+    # Legacy Google Custom Search settings (no longer used for web search)
+    GOOGLE_SEARCH_API_KEY: str = ""  # Deprecated: Custom Search API Key
+    GOOGLE_SEARCH_ENGINE_ID: str = ""  # Deprecated: Custom Search Engine ID (CX)
     WEB_SEARCH_CACHE_TTL: int = 3600  # 1 hour cache for search results
     
     # Web Search Trigger Keywords

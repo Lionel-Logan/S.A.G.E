@@ -1,56 +1,56 @@
 """
-Web Search Service - Integrates Google Custom Search API for real-time information.
-Uses API Key authentication (not service account - Custom Search API doesn't support it).
+Web Search Service - Integrates SerpAPI (Google Search engine) for real-time information.
+Uses API Key authentication via SerpAPI; no Google Custom Search client is used anymore.
 """
 
-from typing import List, Dict, Optional
-from datetime import datetime, timedelta
-from googleapiclient.discovery import build
-from app.config import settings
+from typing import List, Dict
+from datetime import datetime
 import logging
+
+import httpx
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+
 class WebSearchService:
-    """
-    Service for real-time web search using Google Custom Search API.
-    Uses API Key authentication (Custom Search API requirement).
-    """
-    
+    """Service for real-time web search using SerpAPI (Google Search)."""
+
     def __init__(self):
-        """Initialize Google Custom Search service with API Key."""
-        print("\n" + "="*60)
-        print("🔍 WebSearchService Initialization")
-        print("="*60)
-        
-        self.api_key = settings.GOOGLE_SEARCH_API_KEY
+        """Initialize SerpAPI configuration for web search."""
+        print("\n" + "=" * 60)
+        print("🔍 WebSearchService Initialization (SerpAPI)")
+        print("=" * 60)
+
+        # SerpAPI configuration
+        self.api_key = settings.SERPAPI_API_KEY
+        # Keep legacy attribute for compatibility with existing tests/prints
         self.search_engine_id = settings.GOOGLE_SEARCH_ENGINE_ID
-        
-        print(f"API Key: {self.api_key[:10]}***" if self.api_key else "API Key: NOT SET")
-        print(f"Search Engine ID: {self.search_engine_id}")
-        
-        # Build the search service using API Key
-        try:
-            print(f"Building Custom Search client with API Key...")
-            self.service = build(
-                'customsearch', 'v1',
-                developerKey=self.api_key,
-                static_discovery=False
-            )
-            print(f"✅ Google Custom Search Service initialized with API Key")
-            print(f"   Search Engine ID: {self.search_engine_id}")
-            logger.info(f"✅ Google Custom Search Service initialized with API Key")
-        except Exception as e:
-            print(f"❌ Failed to initialize Google Custom Search: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
-            logger.error(f"Failed to initialize Google Custom Search: {e}")
+        self.base_url = "https://serpapi.com/search"
+
+        if self.api_key:
+            print(f"SerpAPI Key: {self.api_key[:10]}***")
+        else:
+            print("SerpAPI Key: NOT SET")
+
+        print(f"Legacy Google Search Engine ID (unused): {self.search_engine_id}")
+
+        # In the old implementation, `service` was a Google API client.
+        # Here we just use it as a simple flag so existing checks continue to work.
+        if self.api_key:
+            self.service = True
+            print("✅ SerpAPI web search client configured")
+            logger.info("✅ SerpAPI web search client configured")
+        else:
             self.service = None
-        
+            print("❌ SerpAPI API key not configured; web search disabled")
+            logger.warning("SerpAPI API key not configured; web search disabled")
+
         # Simple in-memory cache for search results
         self.cache: Dict[str, Dict] = {}
         self.cache_ttl = settings.WEB_SEARCH_CACHE_TTL
-        print("="*60 + "\n")
+        print("=" * 60 + "\n")
     
     def _is_cache_valid(self, cached_item: Dict) -> bool:
         """Check if cached item is still valid."""
@@ -79,39 +79,54 @@ class WebSearchService:
                 print(f"📦 [WebSearch] Cache hit for query: {query}")
                 logger.info(f"Cache hit for query: {query}")
                 return self.cache[query]["results"]
-            
+
             if not self.service:
-                print(f"❌ [WebSearch] Search service not initialized!")
+                print(f"❌ [WebSearch] Search service not initialized (missing SerpAPI key)!")
                 logger.warning("Search service not initialized, returning empty results")
                 return []
-            
-            # Execute search
-            print(f"🔄 [WebSearch] Calling Google Custom Search API")
-            logger.info(f"Calling Google Custom Search API for: {query}")
-            result = self.service.cse().list(
-                q=query,
-                cx=self.search_engine_id,
-                num=num_results,
-                safe='active'  # Filter adult content
-            ).execute()
-            
+
+            # Execute search via SerpAPI
+            print(f"🔄 [WebSearch] Calling SerpAPI (engine=google)")
+            logger.info(f"Calling SerpAPI for: {query}")
+
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.get(
+                    self.base_url,
+                    params={
+                        "engine": "google",
+                        "q": query,
+                        "api_key": self.api_key,
+                        "num": num_results,
+                        "safe": "active",
+                    },
+                )
+                response.raise_for_status()
+                result = response.json()
+
             print(f"✅ [WebSearch] API call successful, processing results")
-            
+
             # Parse and format results
-            formatted_results = []
-            if 'items' in result:
-                print(f"📄 [WebSearch] Found {len(result['items'])} items in search results")
-                for i, item in enumerate(result['items'], 1):
+            formatted_results: List[Dict] = []
+
+            # Prefer organic_results from SerpAPI
+            organic_results = result.get("organic_results") or []
+            if organic_results:
+                print(f"📄 [WebSearch] Found {len(organic_results)} organic results")
+                for i, item in enumerate(organic_results[:num_results], 1):
                     formatted_item = {
-                        'title': item.get('title', 'No title'),
-                        'snippet': item.get('snippet', 'No snippet'),
-                        'url': item.get('link', ''),
-                        'published_date': item.get('pagemap', {}).get('metatags', [{}])[0].get('article:published_time', 'N/A')
+                        "title": item.get("title", "No title"),
+                        "snippet": item.get("snippet", "No snippet"),
+                        "url": item.get("link", ""),
+                        # SerpAPI often provides a 'date' field; fall back to 'N/A' if missing
+                        "published_date": item.get("date", "N/A"),
                     }
                     formatted_results.append(formatted_item)
                     print(f"  {i}. {formatted_item['title'][:60]}...")
             else:
-                print(f"⚠️ [WebSearch] No 'items' key in search results. Raw response keys: {result.keys()}")
+                print(
+                    f"⚠️ [WebSearch] No 'organic_results' key in search results. "
+                    f"Raw response keys: {list(result.keys())}"
+                )
             
             # Cache the results
             self.cache[query] = {
