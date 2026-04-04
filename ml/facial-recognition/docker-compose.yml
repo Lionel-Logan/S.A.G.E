@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  facial-recognition:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sage-facial-recognition
+    ports:
+      - "8002:8002"
+    volumes:
+      # Mount the models folder so the face database persists across container restarts
+      - ./src/models:/app/src/models
+    restart: unless-stopped
