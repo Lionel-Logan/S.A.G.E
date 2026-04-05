@@ -1,33 +1,24 @@
-# ========================================
-# DEPRECATED - NO LONGER NEEDED
-# ========================================
-# This LibreTranslate service is no longer used.
-# Translation now uses Google Cloud Translate API.
-# This file is kept for reference only.
-# ========================================
+version: '3.8'
 
 services:
-  libretranslate:
-    image: libretranslate/libretranslate:latest
-    container_name: libretranslate
-    restart: unless-stopped
+  backend:
+    build: .
     ports:
-      - "5001:5000"
+      - "8000:8000"
+    env_file:
+      - .env
     environment:
-      - LT_THREADS=4
-      - LT_DEBUG=false
-      - LT_SUGGESTIONS=false
-      - LT_UPDATE_MODELS=true
+      - REDIS_URL=redis://redis:6379/0
+      - FACE_RECOGNITION_URL=http://host.docker.internal:8002
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/service_account.json
     volumes:
-      - libretranslate-data:/app/db
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:5000/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      - ./service_account.json:/app/service_account.json
+    restart: unless-stopped
+    depends_on:
+      - redis
 
-volumes:
-  libretranslate-data:
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped

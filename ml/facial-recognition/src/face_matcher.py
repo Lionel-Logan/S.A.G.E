@@ -2,13 +2,12 @@
 Face Matcher Service
 Core logic for face recognition and enrollment
 """
-import sqlite3
 import numpy as np
 from typing import List, Dict, Optional, Tuple
 from insightface.app import FaceAnalysis
 import logging
 import config
-from utils.db_helper import adapt_array, convert_array, init_db
+from utils.db_helper import adapt_array, convert_array, init_db, get_connection
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +34,13 @@ class FaceMatcher:
         """Load InsightFace model"""
         try:
             logger.info(f"Loading InsightFace model: {config.INSIGHTFACE_MODEL}")
+            # allowed_modules limits loading to the two ONNX files we actually need:
+            # det_500m.onnx (detection) + w600k_mbf.onnx (recognition).
+            # Skipping landmark_3d_68, landmark_2d_106, and genderage cuts
+            # peak RAM from ~450 MB → ~80 MB, keeping us inside the 512 MB free tier.
             self.model = FaceAnalysis(
                 name=config.INSIGHTFACE_MODEL,
+                allowed_modules=['detection', 'recognition'],
                 providers=config.PROVIDERS
             )
             self.model.prepare(ctx_id=0, det_size=config.DETECTION_SIZE)
@@ -96,7 +100,7 @@ class FaceMatcher:
             Format: [{"name": str, "description": str, "confidence": float}, ...]
         """
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = get_connection(self.db_path)
             cursor = conn.cursor()
             cursor.execute("SELECT name, description, embedding FROM people")
             rows = cursor.fetchall()
@@ -267,7 +271,7 @@ class FaceMatcher:
         
         # Save to database
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = get_connection(self.db_path)
             cursor = conn.cursor()
             cursor.execute(
                 "INSERT INTO people (name, description, embedding) VALUES (?, ?, ?)",
@@ -290,6 +294,96 @@ class FaceMatcher:
             logger.error(f"Database insert failed: {str(e)}")
             raise FaceMatcherError(f"Failed to save to database: {str(e)}")
     
+    def list_people(self) -> List[Dict]:
+        """
+        List all registered people in the database
+        
+        Returns:
+            List of dicts with id, name, description (no embeddings)
+            Format: [{"id": int, "name": str, "description": str}, ...]
+        """
+        try:
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, name, description FROM people ORDER BY name ASC")
+            rows = cursor.fetchall()
+            conn.close()
+
+            people = [
+                {"id": row[0], "name": row[1], "description": row[2]}
+                for row in rows
+            ]
+
+            logger.info(f"Listed {len(people)} registered person(s)")
+            return people
+
+        except Exception as e:
+            logger.error(f"Failed to list people: {str(e)}")
+            raise FaceMatcherError(f"Failed to list people: {str(e)}")
+
+    def delete_person_by_id(self, person_id: int) -> bool:
+        """
+        Delete a person from the database by their integer ID
+        
+        Args:
+            person_id: The primary key ID of the person to delete
+            
+        Returns:
+            True if a row was deleted, False if no matching ID was found
+        """
+        try:
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM people WHERE id = ?", (person_id,))
+            deleted = cursor.rowcount
+            conn.commit()
+            conn.close()
+
+            if deleted > 0:
+                logger.info(f"✓ Deleted person with ID {person_id}")
+                return True
+            else:
+                logger.warning(f"No person found with ID {person_id}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Failed to delete person: {str(e)}")
+            raise FaceMatcherError(f"Failed to delete person: {str(e)}")
+
+    def update_person_by_id(self, person_id: int, name: str, description: str) -> bool:
+        """
+        Update the name and description of a person by their integer ID
+
+        Args:
+            person_id: The primary key ID of the person to update
+            name: New name value
+            description: New description value
+
+        Returns:
+            True if a row was updated, False if no matching ID was found
+        """
+        try:
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE people SET name = ?, description = ? WHERE id = ?",
+                (name, description, person_id)
+            )
+            updated = cursor.rowcount
+            conn.commit()
+            conn.close()
+
+            if updated > 0:
+                logger.info(f"✓ Updated person ID {person_id} -> name='{name}', description='{description}'")
+                return True
+            else:
+                logger.warning(f"No person found with ID {person_id} for update")
+                return False
+
+        except Exception as e:
+            logger.error(f"Failed to update person: {str(e)}")
+            raise FaceMatcherError(f"Failed to update person: {str(e)}")
+
     def get_database_stats(self) -> Dict:
         """
         Get database statistics
@@ -298,7 +392,7 @@ class FaceMatcher:
             Dictionary with database stats
         """
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = get_connection(self.db_path)
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM people")
             total_faces = cursor.fetchone()[0]
@@ -322,7 +416,7 @@ class FaceMatcher:
                 return False
             
             # Check database
-            conn = sqlite3.connect(self.db_path)
+            conn = get_connection(self.db_path)
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM people")
             conn.close()

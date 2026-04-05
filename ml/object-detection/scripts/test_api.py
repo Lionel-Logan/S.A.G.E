@@ -10,7 +10,7 @@ from PIL import Image
 class ObjectDetectionTester:
     """Test runner for the Object Detection API."""
     
-    def __init__(self, base_url: str = "http://127.0.0.1:8001"):
+    def __init__(self, base_url: str = "http://127.0.0.1:8003"):
         """Initialize tester.
         
         Args:

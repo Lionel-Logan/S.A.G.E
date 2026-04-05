@@ -54,8 +54,8 @@ async def test_principal_query():
         response = await ask_assistant(request)
         
         print(f"\n✅ Assistant Response:")
-        print(f"Type: {response.get('response_type', 'N/A')}")
-        print(f"\nAnswer:\n{response.get('response', 'No response')}")
+        print(f"Type: {getattr(response, 'action_type', 'N/A')}")
+        print(f"\nAnswer:\n{getattr(response, 'response_text', 'No response')}")
         
     except Exception as e:
         print(f"❌ Error: {type(e).__name__}: {e}")

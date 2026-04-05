@@ -28,3 +28,5 @@ def init_db(db_path):
     ''')
     conn.commit()
     conn.close()
+def get_connection(db_path):
+    return sqlite3.connect(db_path)

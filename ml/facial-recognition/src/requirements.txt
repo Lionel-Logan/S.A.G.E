@@ -8,7 +8,7 @@ pydantic==2.5.3
 
 # Face Recognition
 insightface==0.7.3
-onnxruntime==1.16.3  # Required by InsightFace
+onnxruntime==1.17.1  # Required by InsightFace
 
 # Image Processing
 opencv-python==4.9.0.80

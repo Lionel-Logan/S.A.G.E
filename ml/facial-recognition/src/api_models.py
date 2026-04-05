@@ -153,3 +153,89 @@ class HealthResponse(BaseModel):
     model_loaded: bool = Field(..., description="Whether the model is loaded")
     database_connected: bool = Field(..., description="Whether database is accessible")
     timestamp: datetime = Field(default_factory=datetime.utcnow, description="Health check timestamp")
+
+
+class PersonRecord(BaseModel):
+    """Model for a single registered person in the database"""
+    id: int = Field(..., description="Database primary key ID")
+    name: str = Field(..., description="Person's name")
+    description: str = Field(..., description="Relation or description (e.g. Friend, Colleague)")
+
+
+class ListPeopleResponse(BaseModel):
+    """Response model for the list all people endpoint"""
+    success: bool = Field(..., description="Whether the operation was successful")
+    total: int = Field(..., ge=0, description="Total number of registered people")
+    people: List[PersonRecord] = Field(default=[], description="List of registered people")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Response timestamp")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "success": True,
+                "total": 2,
+                "people": [
+                    {"id": 1, "name": "John Doe", "description": "Friend"},
+                    {"id": 2, "name": "Jane Smith", "description": "Colleague"}
+                ],
+                "timestamp": "2026-01-25T10:30:00"
+            }
+        }
+
+
+class DeletePersonResponse(BaseModel):
+    """Response model for the delete person endpoint"""
+    success: bool = Field(..., description="Whether the deletion was successful")
+    message: str = Field(..., description="Status message")
+    person_id: int = Field(..., description="ID of the deleted person")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Response timestamp")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "success": True,
+                "message": "Person deleted successfully",
+                "person_id": 1,
+                "timestamp": "2026-01-25T10:30:00"
+            }
+        }
+
+
+class UpdatePersonRequest(BaseModel):
+    """Request model for updating a person's name and/or description"""
+    name: str = Field(..., min_length=1, max_length=100, description="Updated name")
+    description: str = Field(..., min_length=1, max_length=200, description="Updated relation or description")
+
+    @validator('name')
+    def validate_name(cls, v):
+        if not v.strip():
+            raise ValueError("name cannot be empty or whitespace")
+        return v.strip()
+
+    @validator('description')
+    def validate_description(cls, v):
+        if not v.strip():
+            raise ValueError("description cannot be empty or whitespace")
+        return v.strip()
+
+
+class UpdatePersonResponse(BaseModel):
+    """Response model for the update person endpoint"""
+    success: bool = Field(..., description="Whether the update was successful")
+    message: str = Field(..., description="Status message")
+    person_id: int = Field(..., description="ID of the updated person")
+    name: str = Field(..., description="Updated name")
+    description: str = Field(..., description="Updated description")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Response timestamp")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "success": True,
+                "message": "Person updated successfully",
+                "person_id": 1,
+                "name": "John Doe",
+                "description": "Best Friend",
+                "timestamp": "2026-01-25T10:30:00"
+            }
+        }

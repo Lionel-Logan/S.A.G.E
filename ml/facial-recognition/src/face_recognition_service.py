@@ -14,8 +14,11 @@ import config
 from api_models import (
     RecognizeRequest, RecognizeResponse, FaceMatch,
     EnrollRequest, EnrollResponse,
-    ErrorResponse, HealthResponse
+    ErrorResponse, HealthResponse,
+    PersonRecord, ListPeopleResponse, DeletePersonResponse,
+    UpdatePersonRequest, UpdatePersonResponse
 )
+import asyncio
 from face_matcher import FaceMatcher, FaceMatcherError
 from utils.image_utils import decode_base64_image, validate_image, preprocess_image, ImageProcessingError
 
@@ -45,35 +48,54 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global face matcher instance
+# Global face matcher instance (None while model is still loading)
 face_matcher: FaceMatcher = None
+
+
+def _require_model():
+    """Raise 503 if the model hasn't finished loading yet."""
+    if face_matcher is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Model is still loading — please retry in a few seconds"
+        )
 
 
 # ==================== STARTUP/SHUTDOWN EVENTS ====================
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize the face matcher on startup"""
+    """Bind the port immediately, then load the model in a background thread.
+
+    Render (and other PaaS) scan for an open port immediately after the
+    process starts.  If model loading blocks the event loop the port never
+    opens in time and the deploy fails with "No open ports detected".
+    Loading in run_in_executor releases the event loop so uvicorn can accept
+    connections while the model is still initialising.
+    """
     global face_matcher
-    try:
-        logger.info("=" * 60)
-        logger.info(f"Starting {config.SERVICE_NAME} v{config.SERVICE_VERSION}")
-        logger.info("=" * 60)
-        
-        face_matcher = FaceMatcher()
-        
-        # Log database stats
-        stats = face_matcher.get_database_stats()
-        logger.info(f"Database: {stats['total_faces']} faces registered")
-        
-        logger.info("=" * 60)
-        logger.info(f"✓ Service ready on http://{config.SERVICE_HOST}:{config.SERVICE_PORT}")
-        logger.info(f"✓ API Docs: http://{config.SERVICE_HOST}:{config.SERVICE_PORT}/docs")
-        logger.info("=" * 60)
-        
-    except Exception as e:
-        logger.error(f"Failed to start service: {str(e)}")
-        raise
+    logger.info("=" * 60)
+    logger.info(f"Starting {config.SERVICE_NAME} v{config.SERVICE_VERSION}")
+    logger.info("=" * 60)
+    logger.info("Port bound — loading InsightFace model in background thread...")
+
+    loop = asyncio.get_event_loop()
+
+    async def _load_model():
+        global face_matcher
+        try:
+            fm = await loop.run_in_executor(None, FaceMatcher)
+            face_matcher = fm
+            stats = face_matcher.get_database_stats()
+            logger.info(f"Database: {stats['total_faces']} faces registered")
+            logger.info("=" * 60)
+            logger.info(f"✓ Service ready on http://{config.SERVICE_HOST}:{config.SERVICE_PORT}")
+            logger.info(f"✓ API Docs: http://{config.SERVICE_HOST}:{config.SERVICE_PORT}/docs")
+            logger.info("=" * 60)
+        except Exception as e:
+            logger.error(f"Failed to load model: {str(e)}", exc_info=True)
+
+    asyncio.create_task(_load_model())
 
 
 @app.on_event("shutdown")
@@ -136,12 +158,26 @@ async def root():
         "version": config.SERVICE_VERSION,
         "status": "running",
         "endpoints": {
+            "ping": "/ping",
             "health": "/health",
             "recognize": "/recognize",
             "enroll": "/enroll",
+            "people_list": "GET /people",
+            "people_update": "PUT /people/{person_id}",
+            "people_delete": "DELETE /people/{person_id}",
+            "stats": "/stats",
             "docs": "/docs"
         }
     }
+
+
+@app.get("/ping")
+async def ping():
+    """
+    Lightweight keep-alive endpoint (no model inference).
+    Used by UptimeRobot every 5 minutes to prevent Render free-tier spin-down.
+    """
+    return {"status": "ok"}
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -170,6 +206,7 @@ async def recognize_faces(request: RecognizeRequest):
     - Returns list of recognized faces with names, descriptions, and confidence scores
     - Returns "Unknown" for faces not in database
     """
+    _require_model()
     logger.info(f"POST /recognize - threshold: {request.threshold}")
     
     try:
@@ -246,6 +283,7 @@ async def enroll_face(request: EnrollRequest):
     - Returns error if multiple faces or duplicate detected
     - Saves face embedding with name and description (relation)
     """
+    _require_model()
     logger.info(f"POST /enroll - name: {request.name}, threshold: {request.threshold}")
     
     try:
@@ -297,9 +335,111 @@ async def enroll_face(request: EnrollRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/people", response_model=ListPeopleResponse)
+async def list_people():
+    """
+    List all registered people in the database
+
+    - Returns id, name, and description for every enrolled person
+    - App uses the returned id to identify who to delete
+    - Returns an empty list (not an error) when no one is enrolled
+    """
+    _require_model()
+    logger.info("GET /people")
+    try:
+        people = face_matcher.list_people()
+        return ListPeopleResponse(
+            success=True,
+            total=len(people),
+            people=[PersonRecord(**p) for p in people],
+            timestamp=datetime.utcnow()
+        )
+    except FaceMatcherError:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to list people: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/people/{person_id}", response_model=DeletePersonResponse)
+async def delete_person(person_id: int):
+    """
+    Delete a registered person from the database by their ID
+
+    - The ID comes from the GET /people response
+    - Returns 404 if no person with that ID exists
+    - Permanently removes the face embedding from the database
+    """
+    _require_model()
+    logger.info(f"DELETE /people/{person_id}")
+    try:
+        deleted = face_matcher.delete_person_by_id(person_id)
+
+        if not deleted:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No person found with ID {person_id}"
+            )
+
+        logger.info(f"✓ Deleted person ID {person_id}")
+        return DeletePersonResponse(
+            success=True,
+            message=f"Person with ID {person_id} deleted successfully",
+            person_id=person_id,
+            timestamp=datetime.utcnow()
+        )
+    except HTTPException:
+        raise
+    except FaceMatcherError:
+        raise
+    except Exception as e:
+        logger.error(f"Deletion failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/people/{person_id}", response_model=UpdatePersonResponse)
+async def update_person(person_id: int, request: UpdatePersonRequest):
+    """
+    Update the name and description of a registered person
+
+    - Identified by person_id from the GET /people response
+    - Both name and description must be provided (pre-fill from existing values)
+    - Returns 404 if no person with that ID exists
+    - Face embedding is unchanged — only metadata is updated
+    """
+    _require_model()
+    logger.info(f"PUT /people/{person_id} - name: {request.name}, description: {request.description}")
+    try:
+        updated = face_matcher.update_person_by_id(person_id, request.name, request.description)
+
+        if not updated:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No person found with ID {person_id}"
+            )
+
+        logger.info(f"✓ Updated person ID {person_id}")
+        return UpdatePersonResponse(
+            success=True,
+            message=f"Person with ID {person_id} updated successfully",
+            person_id=person_id,
+            name=request.name,
+            description=request.description,
+            timestamp=datetime.utcnow()
+        )
+    except HTTPException:
+        raise
+    except FaceMatcherError:
+        raise
+    except Exception as e:
+        logger.error(f"Update failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/stats")
 async def get_stats():
     """Get database statistics"""
+    _require_model()
     stats = face_matcher.get_database_stats()
     return {
         "total_faces": stats["total_faces"],
