@@ -3170,13 +3170,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       // Facial Recognition Option
                       InkWell(
                         onTap: () {
-                          // TODO: Navigate to facial recognition settings
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Facial Recognition - Coming Soon'),
-                              backgroundColor: AppTheme.cyan,
-                            ),
-                          );
+                          widget.onNavigate('facial_recognition_settings');
                         },
                         borderRadius: BorderRadius.circular(12),
                         child: Container(

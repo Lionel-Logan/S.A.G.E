@@ -23,6 +23,9 @@ class BackendConfig {
   /// The FastAPI backend runs on port 8000
   static const String localhostUrl = 'http://192.168.1.4:8000';
   
+  /// Facial Recognition URL
+  static const String localhostFacialRecognitionUrl = 'http://192.168.1.4:8002';
+  
   /// Android emulator needs to use 10.0.2.2 instead of localhost
   static const String localhostAndroidEmulatorUrl = 'http://10.0.2.2:8000';
   
@@ -121,14 +124,40 @@ class BackendConfig {
   // HELPER METHODS
   // ============================================================================
   
-  /// Get appropriate backend URL based on platform
+  /// Custom backend URL set by the user from Settings
+  static String? customBackendUrl;
+
+  /// Custom Facial Recognition URL
+  static String? customFacialRecognitionUrl;
+
+  /// Get appropriate backend URL based on platform override
   static String getBackendUrl({bool isEmulator = false}) {
+    // If user has provided a custom backend URL, use it
+    if (customBackendUrl != null && customBackendUrl!.isNotEmpty) {
+      return customBackendUrl!;
+    }
+    
     // In production, use productionUrl
     // For now, use localhost
     if (isEmulator) {
       return localhostAndroidEmulatorUrl;
     }
     return localhostUrl;
+  }
+
+  /// Get appropriate facial recognition URL based on platform override
+  static String getFacialRecognitionUrl({bool isEmulator = false}) {
+    // If user has provided a custom FR URL, use it
+    if (customFacialRecognitionUrl != null && customFacialRecognitionUrl!.isNotEmpty) {
+      return customFacialRecognitionUrl!;
+    }
+    
+    // In production, use productionUrl
+    // For now, use localhost
+    if (isEmulator) {
+      return 'http://10.0.2.2:8002'; // Default emulator port
+    }
+    return localhostFacialRecognitionUrl;
   }
   
   /// Get WebSocket URL from HTTP URL

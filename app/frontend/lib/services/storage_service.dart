@@ -11,6 +11,32 @@ class StorageService {
   static const String _keyWiFiPassword = 'wifi_password';
   static const String _keyWiFiTimestamp = 'wifi_timestamp';
   static const String _keyPairingTimestamp = 'pairing_timestamp';
+  static const String _keyBackendUrl = 'backend_url';
+  static const String _keyFacialRecognitionUrl = 'facial_recognition_url';
+
+  /// Get custom backend URL
+  static Future<String?> getBackendUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyBackendUrl);
+  }
+
+  /// Save custom backend URL
+  static Future<void> saveBackendUrl(String url) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyBackendUrl, url);
+  }
+
+  /// Get custom FR URL
+  static Future<String?> getFacialRecognitionUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyFacialRecognitionUrl);
+  }
+
+  /// Save custom FR URL
+  static Future<void> saveFacialRecognitionUrl(String url) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyFacialRecognitionUrl, url);
+  }
 
   /// Check if device has been paired
   static Future<bool> isPaired() async {

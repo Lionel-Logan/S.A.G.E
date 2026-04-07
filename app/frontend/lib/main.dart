@@ -12,12 +12,26 @@ import 'screens/object_detection_settings_screen.dart';
 import 'screens/camera_settings_screen.dart';
 import 'screens/microphone_settings_screen.dart';
 import 'screens/location_debug_screen.dart';
+import 'screens/facial_recognition_settings_screen.dart';
 import 'services/storage_service.dart';
 import 'services/bluetooth_audio_service.dart';
 import 'services/location_stream_manager.dart';
+import 'config/backend_config.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Load custom backend URL if present
+  final savedBackendUrl = await StorageService.getBackendUrl();
+  if (savedBackendUrl != null && savedBackendUrl.isNotEmpty) {
+    BackendConfig.customBackendUrl = savedBackendUrl;
+  }
+  
+  // Load custom facial recognition URL if present
+  final savedFrUrl = await StorageService.getFacialRecognitionUrl();
+  if (savedFrUrl != null && savedFrUrl.isNotEmpty) {
+    BackendConfig.customFacialRecognitionUrl = savedFrUrl;
+  }
   
   // Start network monitoring for Pi auto-discovery
   BluetoothAudioService.startNetworkMonitoring();
@@ -299,6 +313,12 @@ class _MainNavigatorState extends State<MainNavigator> with AutomaticKeepAliveCl
       case 'object_detection_settings':
         return ObjectDetectionSettingsScreen(
           key: const PageStorageKey('object_detection_settings'),
+          onNavigate: _handleNavigation,
+          currentRoute: _currentRoute,
+        );
+      case 'facial_recognition_settings':
+        return FacialRecognitionSettingsScreen(
+          key: const PageStorageKey('facial_recognition_settings'),
           onNavigate: _handleNavigation,
           currentRoute: _currentRoute,
         );

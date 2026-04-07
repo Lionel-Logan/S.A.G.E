@@ -399,4 +399,76 @@ class ApiService {
       throw Exception('Error getting location: $e');
     }
   }
+
+  // ============================================================================
+  // FACIAL RECOGNITION DATABASE
+  // ============================================================================
+
+  static Future<String> getFacialRecognitionUrl() async {
+    return BackendConfig.getFacialRecognitionUrl();
+  }
+
+  /// Get list of people in facial recognition database
+  static Future<Map<String, dynamic>> fetchPeople() async {
+    try {
+      final frUrl = await getFacialRecognitionUrl();
+      final response = await http.get(
+        Uri.parse('$frUrl/people'),
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw Exception('Failed to fetch people: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error fetching people: $e');
+    }
+  }
+
+  /// Delete a person from the facial recognition database
+  static Future<bool> deletePerson(int id) async {
+    try {
+      final frUrl = await getFacialRecognitionUrl();
+      final response = await http.delete(
+        Uri.parse('$frUrl/people/$id'),
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        return true;
+      } else {
+        throw Exception('Failed to delete person: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error deleting person: $e');
+    }
+  }
+
+  /// Update a person's details in the facial recognition database
+  static Future<Map<String, dynamic>> updatePerson({
+    required int id,
+    required String name,
+    required String description,
+  }) async {
+    try {
+      final frUrl = await getFacialRecognitionUrl();
+      final response = await http.put(
+        Uri.parse('$frUrl/people/$id'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'name': name,
+          'description': description,
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw Exception('Failed to update person: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error updating person: $e');
+    }
+  }
+
 }

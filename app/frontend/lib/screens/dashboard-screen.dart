@@ -320,62 +320,13 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
   
   Future<void> _handleFaceRecognition() async {
-    print('👤 Face recognition started...');
-    try {
-      // Capture image from Pi
-      final camera = await ApiService.captureCamera();
-      final imageBase64 = camera['frame'];
-      
-      // Send to backend for face recognition
-      final result = await ApiService.recognizeFaces(imageBase64: imageBase64);
-      
-      final facesDetected = result['faces_detected'];
-      if (facesDetected > 0) {
-        final names = (result['faces'] as List)
-            .map((f) => f['person_name'])
-            .join(', ');
-        
-        // Display on Pi HUD
-        await ApiService.displayHud(text: 'Hello, $names!');
-        
-        print('✅ Faces detected: $names');
-      } else {
-        await ApiService.displayHud(text: 'No faces detected');
-        print('ℹ️ No faces detected');
-      }
-    } catch (e) {
-      print('❌ Face recognition failed: $e');
-    }
+    print('👤 Face recognition settings selected...');
+    widget.onNavigate('facial_recognition_settings');
   }
   
   Future<void> _handleObjectDetection() async {
-    print('🔍 Object detection started...');
-    try {
-      // Capture image from Pi
-      final camera = await ApiService.captureCamera();
-      final imageBase64 = camera['frame'];
-      
-      // Send to backend for object detection
-      final result = await ApiService.detectObjects(imageBase64: imageBase64);
-      
-      final objectsDetected = result['objects_detected'];
-      if (objectsDetected > 0) {
-        final objects = (result['objects'] as List)
-            .map((o) => o['label'])
-            .take(3)
-            .join(', ');
-        
-        // Display on Pi HUD
-        await ApiService.displayHud(text: 'Detected: $objects');
-        
-        print('✅ Objects: $objects');
-      } else {
-        await ApiService.displayHud(text: 'No objects detected');
-        print('ℹ️ No objects detected');
-      }
-    } catch (e) {
-      print('❌ Object detection failed: $e');
-    }
+    print('🔍 Object detection settings selected...');
+    widget.onNavigate('object_detection_settings');
   }
   
   Future<void> _handleVoiceAssistant() async {

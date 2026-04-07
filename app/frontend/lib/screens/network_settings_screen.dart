@@ -4,6 +4,7 @@ import '../services/network_service.dart';
 import '../services/bluetooth_service.dart';
 import '../services/storage_service.dart';
 import '../models/paired_device.dart';
+import '../config/backend_config.dart';
 import 'dart:async';
 
 class NetworkSettingsScreen extends StatefulWidget {
@@ -15,6 +16,7 @@ class NetworkSettingsScreen extends StatefulWidget {
 
 class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
   final _passwordController = TextEditingController();
+  final _backendUrlController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
   bool _isScanning = false;
@@ -83,6 +85,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
   Future<void> _loadData() async {
     final device = await StorageService.getPairedDevice();
     final wifi = await StorageService.getWiFiCredentials();
+    final backendUrl = await StorageService.getBackendUrl();
     
     setState(() {
       _pairedDevice = device;
@@ -90,6 +93,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
       if (wifi != null) {
         _passwordController.text = wifi.password;
       }
+      _backendUrlController.text = backendUrl ?? BackendConfig.getBackendUrl();
     });
     
     // Auto-scan networks on load
@@ -191,6 +195,33 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
         _isSuccess = false;
         _isConfiguring = false;  // Release lock on error
       });
+    }
+  }
+
+  Future<void> _saveBackendUrl() async {
+    final url = _backendUrlController.text.trim();
+    if (url.isNotEmpty) {
+      await StorageService.saveBackendUrl(url);
+      BackendConfig.customBackendUrl = url;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Backend URL saved successfully.'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Backend URL cannot be empty.'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
@@ -669,6 +700,58 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
                   ),
                 ),
               ],
+              
+              const SizedBox(height: 48),
+
+              // Backend Server Configuration
+              Text(
+                'Backend Server Configuration',
+                style: TextStyle(
+                  color: AppTheme.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Configure the IP address or URL for the S.A.G.E backend server',
+                style: TextStyle(
+                  color: AppTheme.gray500,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              _buildTextField(
+                controller: _backendUrlController,
+                label: 'Backend URL/IP Address',
+                hint: 'e.g. http://192.168.1.100:8000',
+                icon: Icons.link,
+              ),
+              const SizedBox(height: 16),
+              
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () { _saveBackendUrl(); },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.cyan,
+                    foregroundColor: AppTheme.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    'SAVE BACKEND URL',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -679,6 +762,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
   @override
   void dispose() {
     _passwordController.dispose();
+    _backendUrlController.dispose();
     _networkPollTimer?.cancel();
     super.dispose();
   }
