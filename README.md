@@ -46,21 +46,21 @@ The ecosystem relies on an asynchronous distributed microservice architecture sp
 
 ```mermaid
 graph TD;
-    subgraph Hardware Layer - Raspberry Pi
+    subgraph HW["Hardware Layer - Raspberry Pi"]
         Camera((Camera)) --> PiServer[FastAPI Server]
         WakeWord[Porcupine PPN] --> Mic((Mic))
         Mic --> PiServer
         PiServer --> Bluetooth((BT Speaker/HUD))
     end
-    
-    subgraph Mobile Layer - Flutter Companion
+
+    subgraph Mobile["Mobile Layer - Flutter Companion"]
         PiServer <-->|BLE Provisioning| MobileApp[Flutter App]
         MobileApp --> Geo[Geolocation GPS]
         Geo --> WSBridge[WebSocket Location Stream]
         MobileApp --> APIBridge[API Relay]
     end
-    
-    subgraph Cloud Backend - Orchestrator (FastAPI)
+
+    subgraph Cloud["Cloud Backend - Orchestrator (FastAPI)"]
         WSBridge <-->|ws://| CoreBackend[FastAPI Gateway]
         APIBridge <-->|REST API| CoreBackend
         CoreBackend <--> Gemini[Gemini LLM]
@@ -68,8 +68,8 @@ graph TD;
         CoreBackend <--> Serp[SerpAPI Web Search]
         CoreBackend <--> OCR[Google Vision OCR & Translation]
     end
-    
-    subgraph ML Microservices (Local / Edge)
+
+    subgraph ML["ML Microservices (Local / Edge)"]
         CoreBackend <--> FaceRec[Face Recognition: 8002 - InsightFace]
         CoreBackend <--> ObjDet[Object Detection: 8001 - YOLOv8]
     end
