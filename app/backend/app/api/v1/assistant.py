@@ -16,6 +16,7 @@ from app.services.web_search_service import get_web_search_service
 from app.services.object_detection_session import get_detection_session
 from app.services.navigation_session import get_navigation_session_manager
 from app.core.connections import send_command_to_any_device
+from app.core.tts_handler import send_to_tts_robust
 from app.config import settings
 
 router = APIRouter(prefix="/assistant", tags=["AI Assistant"])
@@ -50,15 +51,8 @@ async def _capture_image_from_pi() -> Optional[str]:
         return None
 
 async def _send_to_tts(text: str):
-    """Send text to Pi server for TTS output"""
-    try:
-        async with httpx.AsyncClient(timeout=settings.PI_REQUEST_TIMEOUT) as client:
-            await client.post(
-                f"{settings.PI_SERVER_URL}/tts/speak",
-                json={"text": text, "blocking": False}
-            )
-    except Exception as e:
-        print(f"TTS error: {e}")
+    """Send text to Pi server for TTS output (uses connection pooling)"""
+    await send_to_tts_robust(text, max_retries=2, silent_fail=True)
 
 # Define the Input Schema
 class AssistantRequest(BaseModel):

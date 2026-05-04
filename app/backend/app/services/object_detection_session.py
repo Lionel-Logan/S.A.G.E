@@ -3,6 +3,7 @@ import httpx
 from datetime import datetime
 from typing import Optional, Dict
 from app.config import settings
+from app.core.tts_handler import send_to_tts_robust
 from app.services.model_client import ObjectDetectionClient
 
 
@@ -231,20 +232,12 @@ class ObjectDetectionSession:
     async def _send_to_tts(self, text: str):
         """
         Send text to Pi TTS endpoint for voice output.
+        Uses shared connection pooling for better performance on rapid calls.
         
         Args:
             text: Text to speak
         """
-        try:
-            async with httpx.AsyncClient(timeout=self.pi_timeout) as client:
-                response = await client.post(
-                    f"{self.pi_server_url}/tts/speak",
-                    json={"text": text, "blocking": False}
-                )
-                response.raise_for_status()
-                print(f"🔊 TTS: {text}")
-        except Exception as e:
-            print(f"⚠️ TTS error: {e}")
+        await send_to_tts_robust(text, max_retries=2, silent_fail=True)
 
 
 # Global session manager instance

@@ -12,3 +12,9 @@ services:
     volumes:
       - ./src/data:/app/src/data
     restart: unless-stopped
+    networks:
+      - sage-network
+
+networks:
+  sage-network:
+    external: true

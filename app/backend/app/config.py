@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     
     # Model Servers (Nikhil & Ananya)
-    FACE_RECOGNITION_URL: str = "http://192.168.1.10:8002"
-    OBJECT_DETECTION_URL: str = "http://localhost:8003"
+    FACE_RECOGNITION_URL: str = "http://facial-recognition:8002"
+    OBJECT_DETECTION_URL: str = "http://object-detection:8003"
     MODEL_REQUEST_TIMEOUT: int = 30
     
     # Pi Server (Raspberry Pi)

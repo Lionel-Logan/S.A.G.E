@@ -8,6 +8,7 @@ import asyncio
 from typing import Dict, Any, Optional
 from datetime import datetime
 from app.config import settings
+from app.core.tts_handler import send_to_tts_robust
 import logging
 
 logger = logging.getLogger(__name__)
@@ -127,7 +128,7 @@ class ContinuousObjectDetectionService:
                 # Note: We're calling our own internal API endpoint
                 # Using localhost and assuming we're running on port 8000
                 response = await client.post(
-                    f"http://localhost:8003{settings.API_V1_PREFIX}/objects/detect",
+                    f"http://object-detection:8003{settings.API_V1_PREFIX}/objects/detect",
                     json={
                         "image_base64": image_base64,
                         "confidence_threshold": 0.5
@@ -193,15 +194,8 @@ class ContinuousObjectDetectionService:
             }
     
     async def _send_to_tts(self, text: str):
-        """Send text to Pi server for TTS output"""
-        try:
-            async with httpx.AsyncClient(timeout=settings.PI_REQUEST_TIMEOUT) as client:
-                await client.post(
-                    f"{settings.PI_SERVER_URL}/tts/speak",
-                    json={"text": text, "blocking": False}
-                )
-        except Exception as e:
-            logger.error(f"TTS error: {e}")
+        """Send text to Pi server for TTS output (uses connection pooling)"""
+        await send_to_tts_robust(text, max_retries=2, silent_fail=True)
 
 
 # Singleton instance

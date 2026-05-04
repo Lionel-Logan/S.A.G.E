@@ -34,7 +34,7 @@ GOOGLE_STT_MODEL = "command_and_search"  # Optimised for short voice commands
 GOOGLE_STT_MAX_ALTERNATIVES = 1
 
 # Backend API Configuration
-BACKEND_API_URL = "http://192.168.1.10:8000/api/v1/assistant/ask"  # Mobile app backend endpoint
+BACKEND_API_URL = "http://192.168.1.108:8000/api/v1/assistant/ask"  # Mobile app backend endpoint
 BACKEND_TIMEOUT = 30  # Seconds to wait for backend response
 BACKEND_RETRY_ATTEMPTS = 2  # Number of retry attempts if backend fails
 

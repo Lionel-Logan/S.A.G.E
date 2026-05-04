@@ -8,7 +8,6 @@ from pydantic import BaseModel
 from typing import Dict, Optional, List
 import json
 import uuid
-import httpx
 from datetime import datetime
 from app.config import settings
 from app.services.navigation_session import get_navigation_session_manager
@@ -39,16 +38,9 @@ class LocationUpdate(BaseModel):
 
 
 async def _send_to_tts(text: str):
-    """Send text to Pi server for TTS output"""
-    try:
-        async with httpx.AsyncClient(timeout=settings.PI_REQUEST_TIMEOUT) as client:
-            await client.post(
-                f"{settings.PI_SERVER_URL}/tts/speak",
-                json={"text": text, "blocking": False}
-            )
-            print(f"🔊 TTS: {text}")
-    except Exception as e:
-        print(f"⚠️ TTS error: {e}")
+    """Send text to Pi server for TTS output (uses connection pooling)"""
+    from app.core.tts_handler import send_to_tts_robust
+    await send_to_tts_robust(text, max_retries=2, silent_fail=True)
 
 
 @router.websocket("/ws/{device_id}")

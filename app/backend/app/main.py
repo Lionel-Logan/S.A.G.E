@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from app.config import settings
 from app.api.v1 import  translation, faces, objects, assistant, camera, location
+from app.core.tts_handler import get_tts_client, close_tts_client
 import logging
 
 # Configure logging to print to console
@@ -11,11 +13,48 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage app lifecycle - startup and shutdown"""
+    # Startup
+    print("\n" + "="*60)
+    print("LIFESPAN STARTUP TRIGGERED")
+    print("="*60)
+    try:
+        print("🚀 Starting SAGE Backend...")
+        logger.info("🚀 Starting SAGE Backend...")
+        print("About to call get_tts_client()...")
+        client = await get_tts_client()
+        print(f"✅ Got TTS client: {client}")
+        print("✅ Backend startup complete - TTS Client initialized with connection pooling")
+        logger.info("✅ Backend startup complete")
+    except Exception as e:
+        print(f"❌ STARTUP ERROR: {e}")     
+        logger.error(f"❌ STARTUP ERROR: {e}", exc_info=True)
+        raise
+
+    yield
+
+    # Shutdown
+    print("\n" + "="*60)
+    print("LIFESPAN SHUTDOWN TRIGGERED")
+    print("="*60)
+    try:
+        print("🛑 Shutting down SAGE Backend...")
+        logger.info("🛑 Shutting down SAGE Backend...")
+        await close_tts_client()
+        print("✅ Backend shutdown complete")
+        logger.info("✅ Backend shutdown complete")
+    except Exception as e:
+        print(f"❌ SHUTDOWN ERROR: {e}")
+        logger.error(f"❌ SHUTDOWN ERROR: {e}", exc_info=True)
+
 # Initialize FastAPI app
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.VERSION,
-    description="Backend orchestration layer for SAGE smartglasses"
+    description="Backend orchestration layer for SAGE smartglasses",
+    lifespan=lifespan
 )
 
 # CORS - Allow Flutter app to make requests
@@ -47,18 +86,3 @@ async def root():
 async def health_check():
     """Health check endpoint for monitoring"""
     return {"status": "healthy"}
-
-# Startup event
-@app.on_event("startup")
-async def startup_event():
-    # Initialize database
-    # Start Redis connection
-    # Warm up model server connections
-    print(f"🚀 {settings.APP_NAME} started successfully")
-
-# Shutdown event
-@app.on_event("shutdown")
-async def shutdown_event():
-    # Close database connections
-    # Close Redis connection
-    print("👋 Shutting down gracefully")
