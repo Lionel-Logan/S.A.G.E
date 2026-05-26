@@ -4,14 +4,19 @@ on:
   pull_request:
     branches:
       - main
-
   push:
     branches:
       - main
 
+env:
+  RELEASE_TAG: v1.0.0
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -31,12 +36,12 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: flutter pub get
         working-directory: app/frontend
+        run: flutter pub get
 
       - name: Build APK
-        run: flutter build apk --release
         working-directory: app/frontend
+        run: flutter build apk --release
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -45,9 +50,11 @@ jobs:
           path: app/frontend/build/app/outputs/flutter-apk/app-release.apk
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
         with:
           files: app/frontend/build/app/outputs/flutter-apk/app-release.apk
-          tag_name: v${{ github.run_number }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Release ${{ env.RELEASE_TAG }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
