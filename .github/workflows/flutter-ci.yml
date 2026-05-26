@@ -1,0 +1,65 @@
+name: Flutter CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.32.0
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+        working-directory: app/frontend
+
+      - name: Check code formatting
+        run: flutter format --set-exit-if-changed .
+        working-directory: app/frontend
+
+      - name: Analyze project
+        run: flutter analyze
+        working-directory: app/frontend
+
+      - name: Run tests
+        run: flutter test
+        working-directory: app/frontend
+
+      - name: Build APK
+        run: flutter build apk --release --no-sign
+        working-directory: app/frontend
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: app/frontend/build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: app/frontend/build/app/outputs/flutter-apk/app-release.apk
+          tag_name: v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

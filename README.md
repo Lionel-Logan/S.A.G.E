@@ -146,6 +146,27 @@ flutter run
   <img src="https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png" width="100%" />
 </div>
 
+## 🤝 Contributing
+
+We welcome contributions! Please follow these versioning guidelines when making changes:
+
+### Version Numbering Scheme: `x.y.z`
+
+- **Bug Fixes / Code Refactoring** (e.g., `1.0.0` → `1.0.1`)
+  - Increment `z` for small bug fixes and code refactors with no functional changes
+
+- **Minor Features / Patches** (e.g., `1.0.0` → `1.1.0`)
+  - Increment `y` for patches or small functional improvements
+
+- **Major Features / New Functionality** (e.g., `1.0.0` → `2.0.0`)
+  - Increment `x` for major updates or significant new features
+
+When creating a release, update the `tag_name` in `.github/workflows/flutter-ci.yml` to reflect the new version number before pushing to `main`.
+
+<div align="center">
+  <img src="https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png" width="100%" />
+</div>
+
 <p align="center">
   <i>S.A.G.E is built with ❤️ for smarter interactions and accessible AI.</i>
 </p>
