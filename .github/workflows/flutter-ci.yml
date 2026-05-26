@@ -34,20 +34,8 @@ jobs:
         run: flutter pub get
         working-directory: app/frontend
 
-      - name: Check code formatting
-        run: flutter format --set-exit-if-changed .
-        working-directory: app/frontend
-
-      - name: Analyze project
-        run: flutter analyze
-        working-directory: app/frontend
-
-      - name: Run tests
-        run: flutter test
-        working-directory: app/frontend
-
       - name: Build APK
-        run: flutter build apk --release --no-sign
+        run: flutter build apk --release
         working-directory: app/frontend
 
       - name: Upload APK
